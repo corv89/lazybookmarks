@@ -2,6 +2,19 @@
 
 LazyBookmarks is a Chrome extension that uses Google's in-browser Gemini Nano model to automatically organize your bookmarks. It's a testbed and proof-of-concept for experimenting with Chrome's [Prompt API](https://developer.chrome.com/docs/ai/prompt-api) — the built-in, on-device language model that runs entirely in your browser with no cloud calls. Bookmark things lazily without worrying about folders, then click "Organize" and let the AI classify everything into your existing folder structure.
 
+## Quick Start
+
+```bash
+git clone https://github.com/LLMCoolJ/lazybookmarks.git
+```
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** → select the `lazybookmarks` folder
+4. Click the extension icon → **Organize**
+
+> Requires Chrome 138+ with Prompt API flags enabled. See [full installation guide](#installation) below.
+
 > **This is experimental software.** It modifies your bookmarks by moving them between folders. Back up your bookmarks before using it.
 
 ## Back Up Your Bookmarks
@@ -19,52 +32,33 @@ You can restore from this file at any time using **Import bookmarks** from the s
 
 ### Requirements
 
-**Browser:** Google Chrome only. The Prompt API is a Chrome-specific feature — Chromium, Edge, Brave, and other variants are not supported.
+**Google Chrome 138+** only. The [Prompt API](https://developer.chrome.com/docs/ai/prompt-api) is Chrome-specific — Chromium, Edge, Brave, and other variants are not supported.
 
-**Chrome version:** 138 or later (origin trial). The API is available on `localhost` with feature flags enabled.
-
-**Hardware** (from [official Chrome docs](https://developer.chrome.com/docs/ai/prompt-api)):
-
-| Requirement | Minimum |
-|---|---|
-| OS | Windows 10/11, macOS 13+, Linux, or ChromeOS (Chromebook Plus) |
-| Storage | 22 GB free on the volume containing your Chrome profile |
-| GPU | More than 4 GB VRAM |
-| CPU (if no GPU) | 16 GB RAM and 4+ cores |
-| Network | Unmetered connection (initial model download only) |
+**Hardware minimums** for Gemini Nano ([source](https://developer.chrome.com/docs/ai/prompt-api)):
+- **GPU:** >4 GB VRAM — **or** **CPU:** 16 GB RAM, 4+ cores
+- **Storage:** 22 GB free on the volume containing your Chrome profile
+- **OS:** Windows 10/11, macOS 13+, Linux, or ChromeOS (Chromebook Plus)
 
 ### Step 1: Enable Chrome Flags
 
-Open each of the following URLs in Chrome and set them to **Enabled**, then click **Relaunch**:
+Set both of these to **Enabled**, then relaunch Chrome:
 
 1. `chrome://flags/#optimization-guide-on-device-model`
 2. `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input`
 
 ### Step 2: Verify the Model
 
-Go to `chrome://on-device-internals` and confirm that Gemini Nano is listed and available. If it shows as downloading, wait for it to finish. The model is roughly 2 GB.
+Go to `chrome://on-device-internals` and confirm Gemini Nano is downloaded. If it hasn't started downloading, the flags may need a second relaunch. See [Chrome's troubleshooting guide](https://developer.chrome.com/docs/ai/get-started#troubleshoot_localhost) if the model doesn't appear.
 
-If the model doesn't appear, check that your hardware meets the requirements above. See [Chrome's troubleshooting guide](https://developer.chrome.com/docs/ai/get-started#troubleshoot_localhost) for more help.
-
-### Step 3: Clone and Load the Extension
+### Step 3: Load the Extension
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/LLMCoolJ/lazybookmarks.git
 ```
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (toggle in the top-right)
-3. Click **Load unpacked**
-4. Select the cloned `lazybookmarks` directory
-
-### Step 4: Use It
-
-1. Pin the LazyBookmarks extension in your toolbar
-2. Click the icon to open the bookmark viewer
-3. Click **Organize** to run AI classification
-4. Review the suggestions — accept, reject, or apply all
-
-The AI analyzes your existing folder structure, groups uncategorized bookmarks by theme, and suggests where each one should go. All processing happens locally in your browser.
+1. Open `chrome://extensions` and enable **Developer mode**
+2. Click **Load unpacked** → select the `lazybookmarks` folder
+3. Pin the extension, click the icon, and hit **Organize**
 
 ## Project Overview
 
