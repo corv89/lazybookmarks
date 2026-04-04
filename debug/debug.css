@@ -1,0 +1,184 @@
+/* -- Theme tokens (matches viewer) -- */
+:root {
+  color-scheme: dark light;
+  --bg: light-dark(#f8f9fa, #1a1a2e);
+  --bg-surface: light-dark(#ffffff, #22223a);
+  --text: light-dark(#1a1a2e, #e8e8f0);
+  --text-muted: light-dark(#6b7280, #9ca3af);
+  --border: light-dark(#e5e7eb, #333355);
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+/* -- Reset -- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* -- Header -- */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-title {
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#clear-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+#clear-btn:hover {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.status {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.status-live {
+  color: #22c55e;
+}
+
+/* -- Log container -- */
+.log {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 12px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* -- Entry (details/summary) -- */
+.entry {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.entry-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 13px;
+}
+.entry-summary::-webkit-details-marker { display: none; }
+.entry-summary::marker { display: none; content: ''; }
+
+.entry-summary:hover {
+  background: light-dark(#f3f4f6, #2a2a44);
+}
+
+.entry-time {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* -- Type badges -- */
+.entry-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.badge-prompt   { background: light-dark(#e0e7ff, #312e81); color: light-dark(#4338ca, #a5b4fc); }
+.badge-stream   { background: light-dark(#fce7f3, #500724); color: light-dark(#9d174d, #f9a8d4); }
+.badge-response           { background: light-dark(#dcfce7, #14532d); color: light-dark(#166534, #86efac); }
+.badge-error              { background: light-dark(#fee2e2, #7f1d1d); color: light-dark(#991b1b, #fca5a5); }
+.badge-phase              { background: light-dark(#f3f4f6, #374151); color: light-dark(#374151, #d1d5db); }
+.badge-quota              { background: light-dark(#fef9c3, #422006); color: light-dark(#854d0e, #fde68a); }
+
+.entry-size {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 4.5em;
+  text-align: right;
+}
+
+.entry-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+}
+
+/* -- Entry content (expanded) -- */
+.entry-content {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.entry-content pre {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 4px;
+  background: light-dark(#f3f4f6, #16162a);
+}
+
+.schema-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.error-text {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.phase-text {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.quota-text {
+  font-family: var(--mono);
+  font-size: 13px;
+}

@@ -1,0 +1,33 @@
+# Google Documentation Index
+
+- docs/google/ai/edge/mediapipe/solutions/text/text_embedder.md: MediaPipe Text Embedder guide - create numeric representations of text data for semantic similarity comparison using embedding vectors
+- docs/google/ai/edge/mediapipe/solutions/text/text_embedder/web_js.md: MediaPipe Text Embedder Web/JS implementation guide - setup, configuration, and usage with JavaScript
+- docs/google/ai/edge/mediapipe/solutions/text/text_classifier.md: MediaPipe Text Classifier guide - classify text into categories using ML models
+- docs/google/ai/edge/mediapipe/solutions/text/text_classifier/web_js.md: MediaPipe Text Classifier Web/JS implementation guide - setup and usage with JavaScript
+- docs/google/ai/edge/mediapipe/solutions/customization/text_classifier.md: MediaPipe Text Classifier customization - train custom models with Model Maker on your own dataset
+- docs/google/ai/edge/mediapipe/solutions/text/language_detector/index.md: MediaPipe Language Detector guide - identify text language (315KB model, 110 languages, 0.31ms)
+- docs/google/ai/edge/mediapipe/solutions/text/language_detector/web_js.md: MediaPipe Language Detector Web/JS guide - setup and usage with JavaScript
+- docs/google/ai/edge/mediapipe/solutions/setup_web.md: MediaPipe Web setup guide - development environment configuration for web apps
+- docs/google/ai/edge/mediapipe/solutions/genai/llm_inference.md: MediaPipe LLM Inference guide - run large language models on-device
+- docs/google/ai/edge/mediapipe/solutions/genai/llm_inference/web_js.md: MediaPipe LLM Inference Web/JS guide - run LLMs in browser with WebGPU
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.md: MediaPipe tasks-text API reference - JavaScript API for text tasks
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.filesetresolver.md: FilesetResolver class - resolves WASM files for MediaPipe Tasks
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.languagedetector.md: LanguageDetector class - predicts language of input text
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.textclassifier.md: TextClassifier class - performs NLP classification
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.textembedder.md: TextEmbedder class - performs embedding extraction on text
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.category.md: Category interface - classification category structure
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.classifications.md: Classifications interface - results for classifier head
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.embedding.md: Embedding interface - embedding list with optional timestamp
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.languagedetectoroptions.md: LanguageDetectorOptions interface - config options
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.languagedetectorprediction.md: LanguageDetectorPrediction interface - language code and probability
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.languagedetectorresult.md: LanguageDetectorResult interface - detection result structure
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.textclassifieroptions.md: TextClassifierOptions interface - classifier config
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.textclassifierresult.md: TextClassifierResult interface - classification results
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.textembedderoptions.md: TextEmbedderOptions interface - embedder config
+- docs/google/ai/edge/api/mediapipe/js/tasks-text.textembedderresult.md: TextEmbedderResult interface - embedding results
+- docs/google/ai/gemma/docs/gemma-3n.md: Gemma 3n model overview - lightweight multimodal model
+- docs/google/ai/gemma/docs/gemma-3n/model_card.md: Gemma 3n model card - technical specifications and capabilities
+- docs/google/ai/gemma/docs/embeddinggemma.md: EmbeddingGemma model overview - text embedding model
+- docs/google/ai/gemma/docs/embeddinggemma/model_card.md: EmbeddingGemma model card - technical specifications
+- docs/google/ai/gemma/docs/embeddinggemma/inference-embeddinggemma-with-sentence-transformers.md: EmbeddingGemma inference guide with Sentence Transformers
+- docs/google/ai/gemma/docs/embeddinggemma/fine-tuning-embeddinggemma-with-sentence-transformers.md: EmbeddingGemma fine-tuning guide with Sentence Transformers

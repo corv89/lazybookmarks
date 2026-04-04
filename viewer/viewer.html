@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LazyBookmarks</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header class="header">
+    <h1 class="header-title">LazyBookmarks</h1>
+    <div class="header-controls">
+      <label for="search-input" class="sr-only">Search bookmarks</label>
+      <input type="search" id="search-input" placeholder="Search bookmarks..." autocomplete="off">
+      <button id="expand-all" title="Expand all folders">Expand All</button>
+      <button id="collapse-all" title="Collapse all folders">Collapse All</button>
+      <button id="organize-btn" title="AI-organize uncategorized bookmarks" disabled>Organize</button>
+      <a href="../debug/debug.html" target="_blank" class="debug-link" title="Open AI debug log">Debug</a>
+    </div>
+  </header>
+
+  <div class="stats-bar" id="stats-bar" role="status" aria-live="polite"></div>
+
+  <div id="ai-progress" class="ai-progress" hidden>
+    <div class="ai-progress-label" id="ai-progress-label">Analyzing folders...</div>
+    <progress id="ai-progress-bar" max="100" value="0"></progress>
+  </div>
+
+  <main class="main">
+    <div id="tree-container" class="tree-container"></div>
+    <div id="search-results" class="search-results" hidden></div>
+  </main>
+
+  <div id="loading-overlay" class="loading-overlay" role="status" aria-label="Loading bookmarks">
+    <div class="spinner"></div>
+    <p>Loading bookmarks...</p>
+  </div>
+
+  <!-- Tree node templates -->
+  <template id="folder-tpl">
+    <li role="treeitem" aria-expanded="false" class="tree-folder">
+      <div class="folder-header" tabindex="-1">
+        <span class="chevron" aria-hidden="true">&#9654;</span>
+        <span class="folder-title"></span>
+        <span class="count-badge" aria-label=""></span>
+      </div>
+    </li>
+  </template>
+
+  <template id="bookmark-tpl">
+    <li role="none" class="tree-bookmark">
+      <a role="treeitem" tabindex="-1" target="_blank" rel="noopener">
+        <span class="bookmark-title"></span>
+      </a>
+    </li>
+  </template>
+
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
