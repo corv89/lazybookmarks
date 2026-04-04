@@ -2,6 +2,8 @@
 
 LazyBookmarks is a Chrome extension that uses Google's in-browser Gemini Nano model to automatically organize your bookmarks. It's a testbed and proof-of-concept for experimenting with Chrome's [Prompt API](https://developer.chrome.com/docs/ai/prompt-api) — the built-in, on-device language model that runs entirely in your browser with no cloud calls. Bookmark things lazily without worrying about folders, then click "Organize" and let the AI classify everything into your existing folder structure.
 
+https://github.com/user-attachments/assets/1cfe51ce-d87f-4090-89c1-466f0af645da
+
 ## Quick Start
 
 ```bash
