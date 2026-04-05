@@ -78,14 +78,5 @@ proc loadConfig*(overrides: Config = Config()): Config =
 proc dbPath*(cfg: Config): string =
   cfg.dataDir / "bookmarks.db"
 
-proc logsDir*(cfg: Config): string =
-  cfg.dataDir / "logs"
-
-proc pidFilePath*(cfg: Config): string =
-  cfg.dataDir / "runtime.pid"
-
-proc logFilePath*(cfg: Config): string =
-  cfg.logsDir() / "ollama.log"
-
 proc configFilePath*: string =
   defaultConfigDir() / "config.toml"

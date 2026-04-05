@@ -1,4 +1,4 @@
-import std/[os, strutils, httpclient, terminal, strformat]
+import std/[os, strutils, terminal, strformat]
 import cligen
 import db_connector/db_sqlite
 import ./config
@@ -128,15 +128,14 @@ proc cmdStatus =
 
   echo ""
   styledWriteLine(stdout, styleBright, "  Endpoint:   ", resetStyle, cfg.llmUrl)
-  styledWriteLine(stdout, styleBright, "  Managed:    ", resetStyle, $cfg.runtimeManaged)
   styledWriteLine(stdout, styleBright, "  Model:      ", resetStyle, cfg.modelVariant)
 
   let modelReady = isModelReady(cfg, registry)
-  styledWriteLine(stdout, styleBright, "  Model:      ", resetStyle, if modelReady: "[ready]" else: "[not downloaded]")
+  styledWriteLine(stdout, styleBright, "  Model:      ", resetStyle, if modelReady: "[ready]" else: "[not pulled]")
 
   if cfg.runtimeManaged:
     let running = isRuntimeRunning(cfg)
-    styledWriteLine(stdout, styleBright, "  Runtime:    ", resetStyle, if running: "[running]" else: "[stopped]")
+    styledWriteLine(stdout, styleBright, "  Ollama:     ", resetStyle, if running: "[running]" else: "[not running]")
 
   styledWriteLine(stdout, styleBright, "  Data dir:   ", resetStyle, cfg.dataDir)
   echo ""
@@ -159,7 +158,11 @@ proc cmdDoctor =
   elif not cfg.runtimeManaged:
     dimMsg "Runtime: using external endpoint"
   else:
-    warnMsg "Ollama not found in PATH (install from https://ollama.com)"
+    warnMsg "Ollama not found in PATH"
+    when defined(macosx):
+      stdout.styledWriteLine(styleDim, "  Install: brew install ollama", resetStyle)
+    elif defined(linux):
+      stdout.styledWriteLine(styleDim, "  Install: curl -fsSL https://ollama.com/install.sh | sh", resetStyle)
     issues.inc
 
   let registry = loadModelRegistry()
@@ -168,20 +171,20 @@ proc cmdDoctor =
   elif not cfg.runtimeManaged:
     dimMsg "Model: using external endpoint"
   else:
-    warnMsg &"Model not downloaded: {cfg.modelVariant}"
-    issues.inc
+    warnMsg &"Model not pulled: {cfg.modelVariant}"
 
-  try:
-    let client = newHttpClient(timeout = 3000)
-    defer: client.close()
-    discard client.getContent("http://127.0.0.1:11434/api/tags")
-    infoMsg &"Endpoint reachable: {cfg.llmUrl}"
-  except:
-    if cfg.runtimeManaged:
-      warnMsg &"Endpoint not reachable: {cfg.llmUrl} (normal if not running)"
-    else:
-      errorMsg &"Endpoint not reachable: {cfg.llmUrl}"
-      issues.inc
+  let running = isRuntimeRunning(cfg)
+  if running:
+    infoMsg "Ollama: running"
+  elif not cfg.runtimeManaged:
+    dimMsg "Runtime: using external endpoint"
+  else:
+    warnMsg "Ollama not running"
+    when defined(macosx):
+      stdout.styledWriteLine(styleDim, "  Start: open -a Ollama", resetStyle)
+    elif defined(linux):
+      stdout.styledWriteLine(styleDim, "  Start: ollama serve &", resetStyle)
+    issues.inc
 
   echo ""
   if issues == 0:

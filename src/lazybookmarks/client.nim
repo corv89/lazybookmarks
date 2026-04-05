@@ -1,4 +1,4 @@
-import std/[httpclient, json, os]
+import std/[httpclient, json, os, osproc]
 import ./config
 
 type
@@ -29,14 +29,17 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
   client.headers = newHttpHeaders([("Content-Type", "application/json")])
   defer: client.close()
 
+  let url = cfg.llmUrl & "/chat/completions"
+  if cfg.verbose:
+    stderr.writeLine("[chat] POST " & url)
+
   var lastError = ""
   for attempt in 1..maxRetries:
     try:
-      let url = cfg.llmUrl / "chat" / "completions"
       let response = client.postContent(url, body = $body)
 
       if cfg.verbose:
-        stderr.writeLine("[attempt " & $attempt & "] POST " & url & " -> " & $response.len & " bytes")
+        stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
 
       let parsed = parseJson(response)
       if parsed.hasKey("choices") and parsed["choices"].len > 0:
@@ -50,7 +53,7 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
         stderr.writeLine("[attempt " & $attempt & "] Error: " & e.msg)
       if attempt < maxRetries:
         let delay = 1000 * (1 shl (attempt - 1))
-        os.sleep(delay)
+        discard execShellCmd("sleep " & $(delay * 3 div 1000))
 
   raise newException(CatchableError, "chatCompletion failed after " & $maxRetries & " attempts: " & lastError)
 

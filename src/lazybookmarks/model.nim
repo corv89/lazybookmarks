@@ -28,12 +28,12 @@ proc ollamaRef*(entry: ModelEntry): string =
 proc pullModel*(entry: ModelEntry) =
   let refStr = ollamaRef(entry)
   stdout.styledWriteLine(styleBright, fgGreen, "  ✓ ", fgDefault, resetStyle,
-    "Pulling {refStr}...")
+    "Pulling " & refStr & "...")
 
   let exitCode = execShellCmd("ollama pull " & quoteShell(refStr) & " 2>&1")
   if exitCode != 0:
     stdout.styledWriteLine(styleBright, fgRed, "  ✗ ", fgDefault, resetStyle,
-      "Failed to pull {refStr}")
+      "Failed to pull " & refStr)
     quit(1)
 
 proc listLocalModels*(): seq[string] =
