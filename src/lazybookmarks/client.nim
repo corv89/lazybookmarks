@@ -1,10 +1,29 @@
-import std/[httpclient, json, os, osproc]
+import std/[httpclient, json, os, re, strutils]
 import ./config
 
 type
   Message* = object
     role*: string
     content*: string
+
+proc stripThinkTags*(s: string): string =
+  result = s
+  result = result.replace(re"<think>[\s\S]*?</think>", "")
+  result = result.replace(re"<system-reminder>[\s\S]*?</system-reminder>", "")
+  result = result.replace(re"</?[\w][\w-]*[^>]*>", "")
+  result = result.strip()
+
+proc extractJson*(s: string): string =
+  let cleaned = stripThinkTags(s)
+  let start = cleaned.find('{')
+  if start < 0:
+    return ""
+  var endPos = cleaned.high
+  while endPos > start and cleaned[endPos] != '}':
+    dec endPos
+  if endPos <= start:
+    return ""
+  return cleaned[start .. endPos]
 
 proc chatCompletion*(cfg: Config, messages: seq[Message],
                     jsonSchema: string = "",
@@ -13,7 +32,10 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
     "model": cfg.modelName,
     "messages": messages,
     "temperature": 0.1,
-    "max_tokens": 1024,
+    "max_tokens": 2048,
+    "options": {
+      "think": false,
+    },
   }
 
   if jsonSchema.len > 0:
@@ -43,8 +65,14 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
 
       let parsed = parseJson(response)
       if parsed.hasKey("choices") and parsed["choices"].len > 0:
-        let content = parsed["choices"][0]["message"]["content"].getStr()
-        return parseJson(content)
+        let rawContent = parsed["choices"][0]["message"]["content"].getStr()
+        let content = extractJson(rawContent)
+        if content.len > 0:
+          if cfg.verbose:
+            stderr.writeLine("[chat] response: " & content[0..min(200, content.high)])
+          return parseJson(content)
+        else:
+          lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
       else:
         lastError = "No choices in response: " & response[0..min(200, response.high)]
     except CatchableError as e:
