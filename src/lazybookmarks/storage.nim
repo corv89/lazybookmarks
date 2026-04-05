@@ -1,4 +1,4 @@
-import std/[re, strutils, strformat, random, times, json]
+import std/[re, strutils, strformat, random, times, json, uri, sequtils]
 import db_connector/db_sqlite
 import ./config
 
@@ -65,6 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_import ON bookmarks(import_id);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_folder ON bookmarks(raw_folder);
 """
 
+proc initDb*(cfg: Config): DbConn
+
 proc genUuid*: string =
   const hexChars = "0123456789abcdef"
   var s = ""
@@ -73,6 +75,145 @@ proc genUuid*: string =
       s.add '-'
     s.add hexChars[rand(15)]
   return s
+
+const TrackingParams = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+  "fbclid", "gclid", "msclkid", "ref", "source", "mc_cid", "mc_eid",
+]
+
+proc normalizeUrl*(url: string): string =
+  try:
+    var u = parseUri(url)
+    var host = u.hostname.toLowerAscii()
+    var path = u.path
+    if path.len > 1 and path.endsWith("/"):
+      path = path[0 ..< path.len - 1]
+    var query = u.query
+    if query.len > 0:
+      var pairs: seq[string] = @[]
+      for part in query.split('&'):
+        let eqIdx = part.find('=')
+        let key = if eqIdx >= 0: part[0 ..< eqIdx].toLowerAscii() else: part.toLowerAscii()
+        var isTracking = false
+        for tp in TrackingParams:
+          if key == tp:
+            isTracking = true
+            break
+        if not isTracking:
+          pairs.add(part)
+      if pairs.len > 0:
+        query = pairs.join("&")
+        result = host & path & "?" & query
+      else:
+        result = host & path
+    else:
+      result = host & path
+  except:
+    result = url.toLowerAscii()
+
+proc extractDomain*(url: string): string =
+  try:
+    let u = parseUri(url)
+    result = u.hostname.toLowerAscii()
+  except:
+    let idx = url.find("://")
+    if idx >= 0:
+      let rest = url[idx + 3 .. url.high]
+      let slashIdx = rest.find('/')
+      result = if slashIdx >= 0: rest[0 ..< slashIdx] else: rest
+    else:
+      result = url
+
+type
+  DuplicateGroup* = object
+    keep*:   BookmarkEntry
+    dupes*:  seq[BookmarkEntry]
+    reason*: string
+
+proc findDuplicates*(cfg: Config): seq[DuplicateGroup] =
+  let db = cfg.initDb()
+  defer: db.close()
+
+  for row in db.fastRows(sql("SELECT id, url, title, raw_folder, category, confidence FROM bookmarks ORDER BY added_at DESC")):
+    let b = BookmarkEntry(
+      id:         parseBiggestInt(row[0]),
+      url:        row[1],
+      title:      row[2],
+      rawFolder:  row[3],
+      category:   row[4],
+      confidence: row[5],
+    )
+
+    let normUrl = normalizeUrl(b.url)
+    var matched = false
+
+    for i in 0 ..< result.len:
+      let g = result[i]
+      let keepNorm = normalizeUrl(g.keep.url)
+      if keepNorm == normUrl and normUrl.len > 0:
+        result[i].dupes.add(b)
+        matched = true
+        break
+
+    if not matched:
+      for i in 0 ..< result.len:
+        let g = result[i]
+        let keepDomain = extractDomain(g.keep.url)
+        let bDomain = extractDomain(b.url)
+        if keepDomain == bDomain and keepDomain.len > 0:
+          let keepTitle = g.keep.title.strip().toLowerAscii()
+          let bTitle = b.title.strip().toLowerAscii()
+          if keepTitle.len > 3 and keepTitle == bTitle:
+            result[i].dupes.add(b)
+            matched = true
+            break
+
+    if not matched:
+      result.add(DuplicateGroup(keep: b, dupes: @[], reason: ""))
+
+    for i in 0 ..< result.len:
+      if result[i].dupes.len > 0:
+        let keepNorm = normalizeUrl(result[i].keep.url)
+        var allNormMatch = true
+        for d in result[i].dupes:
+          if normalizeUrl(d.url) != keepNorm:
+            allNormMatch = false
+            break
+        result[i].reason = if allNormMatch: "normalized URL match" else: "same domain + title"
+
+  result = result.filterIt(it.dupes.len > 0)
+
+  for i in 0 ..< result.len:
+    var g = result[i]
+    if g.dupes.len > 0:
+      var bestIdx = 0
+      for j in 0 ..< g.dupes.len:
+        if g.dupes[j].category.len > 0 and g.keep.category.len == 0:
+          bestIdx = j + 1
+          break
+      if bestIdx > 0:
+        let oldKeep = g.keep
+        g.keep = g.dupes[bestIdx - 1]
+        g.dupes[bestIdx - 1] = oldKeep
+      result[i] = g
+
+proc removeDuplicates*(cfg: Config, ids: seq[int64]): int =
+  if ids.len == 0:
+    return 0
+  let db = cfg.initDb()
+  defer: db.close()
+  let placeholders = repeat("?", ids.len).join(",")
+  result = db.execAffectedRows(
+    sql(&"DELETE FROM bookmarks WHERE id IN ({placeholders})"), ids)
+
+proc deleteBookmarks*(cfg: Config, ids: seq[int64]): int =
+  if ids.len == 0:
+    return 0
+  let db = cfg.initDb()
+  defer: db.close()
+  let placeholders = repeat("?", ids.len).join(",")
+  result = db.execAffectedRows(
+    sql(&"DELETE FROM bookmarks WHERE id IN ({placeholders})"), ids)
 
 proc initDb*(cfg: Config): DbConn =
   ensureDir(cfg.dataDir)
@@ -217,6 +358,21 @@ proc getUnorganisedBookmarks*(cfg: Config, limit: int = 0): seq[BookmarkEntry] =
   query.add " ORDER BY added_at DESC"
 
   for row in db.fastRows(sql(query)):
+    result.add(BookmarkEntry(
+      id:        parseBiggestInt(row[0]),
+      url:       row[1],
+      title:     row[2],
+      rawFolder: row[3],
+      category:  row[4],
+      confidence: row[5],
+    ))
+
+proc getAllBookmarks*(cfg: Config): seq[BookmarkEntry] =
+  let db = cfg.initDb()
+  defer: db.close()
+
+  for row in db.fastRows(sql(
+      "SELECT id, url, title, raw_folder, category, confidence FROM bookmarks ORDER BY added_at DESC")):
     result.add(BookmarkEntry(
       id:        parseBiggestInt(row[0]),
       url:       row[1],

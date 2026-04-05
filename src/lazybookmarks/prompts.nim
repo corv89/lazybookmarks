@@ -1,16 +1,5 @@
 import std/strutils
-
-proc extractDomain*(url: string): string =
-  result = url
-  try:
-    let idx = result.find("://")
-    if idx >= 0:
-      result = result[idx + 3 .. ^1]
-    let slashIdx = result.find('/')
-    if slashIdx >= 0:
-      result = result[0 .. slashIdx - 1]
-  except:
-    discard
+import ./storage
 
 const SystemPrompt* = "You are a bookmark classifier. Given a user's folder structure and uncategorized bookmarks, assign each to the most appropriate existing folder. If no folder fits well, set targetFolderId to \"__skip__\" instead of forcing a poor match. Respond with ONLY valid JSON matching the required structure. No explanation, no markdown, no other text. Prefer the user's existing folder names. Only suggest new folders when necessary."
 

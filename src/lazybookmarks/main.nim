@@ -1,4 +1,4 @@
-import std/[os, strutils, terminal, strformat]
+import std/[os, strutils, terminal, strformat, sequtils, algorithm]
 import cligen
 import ./config
 import ./storage
@@ -6,6 +6,7 @@ import ./model
 import ./runtime
 import ./bootstrap
 import ./organizer
+import ./linkchecker
 import ./ui
 
 proc cmdImport(file: string, format = "auto", dryRun = false) =
@@ -184,6 +185,98 @@ proc cmdDoctor =
   else:
     warnMsg &"{issues} issue(s) found"
 
+proc cmdDedup(interactive = true, autoRemove = false) =
+  let cfg = loadConfig()
+  let groups = findDuplicates(cfg)
+
+  if groups.len == 0:
+    infoMsg "No duplicate bookmarks found."
+    return
+
+  var totalDupes = 0
+  for g in groups:
+    totalDupes.inc g.dupes.len
+  dimMsg &"Found {groups.len} duplicate group(s) ({totalDupes} total duplicates)"
+  echo ""
+
+  var totalRemoved = 0
+
+  if interactive:
+    for i, g in groups:
+      let remove = reviewDuplicateGroup(i + 1, groups.len, g)
+      if remove:
+        let ids = g.dupes.mapIt(it.id)
+        let removed = cfg.removeDuplicates(ids)
+        totalRemoved.inc removed
+        if removed > 0:
+          infoMsg &"Removed {removed} duplicate(s)"
+      else:
+        dimMsg "Skipped"
+  else:
+    if autoRemove:
+      for g in groups:
+        let ids = g.dupes.mapIt(it.id)
+        let removed = cfg.removeDuplicates(ids)
+        totalRemoved.inc removed
+      infoMsg &"Removed {totalRemoved} duplicate(s) across {groups.len} group(s)"
+    else:
+      for i, g in groups:
+        stdout.styledWriteLine(styleBright, &"  Group {i+1}/{groups.len} ", resetStyle, styleDim, &"({g.reason})", resetStyle)
+        let title = if g.keep.title.len > 0: g.keep.title else: "(untitled)"
+        stdout.styledWriteLine("    Keep: ", fgGreen, title, resetStyle, styleDim, &"  [{g.keep.url[0..min(79, g.keep.url.high)]}]", resetStyle)
+        for d in g.dupes:
+          let dt = if d.title.len > 0: d.title else: "(untitled)"
+          stdout.styledWriteLine(styleDim, "    - ", resetStyle, dt, styleDim, &"  [{d.url[0..min(79, d.url.high)]}]", resetStyle)
+      echo ""
+      dimMsg &"Run with --auto-remove to delete duplicates, or --interactive to review each group"
+
+proc cmdCheckLinks(concurrency = 8, deadOnly = false, deleteDead = false,
+                   unorganised = false) =
+  let cfg = loadConfig()
+
+  var bookmarks: seq[BookmarkEntry]
+  if unorganised:
+    bookmarks = getUnorganisedBookmarks(cfg)
+  else:
+    bookmarks = getAllBookmarks(cfg)
+
+  if bookmarks.len == 0:
+    dimMsg "No bookmarks to check."
+    return
+
+  infoMsg &"Checking {bookmarks.len} bookmark(s) (concurrency: {concurrency})..."
+  echo ""
+
+  var results: seq[LinkResult]
+
+  proc onProgress(current, total: int) =
+    showProgressBar(current, total, "  Checking")
+
+  results = checkAllLinks(cfg, bookmarks, concurrency, onProgress)
+
+  stdout.write "\n"
+
+  var filtered: seq[LinkResult]
+  if deadOnly:
+    filtered = results.filterIt(it.status == lsDead)
+  else:
+    filtered = results
+
+  if filtered.len > 0 and not deadOnly:
+    filtered.sort(proc(a, b: LinkResult): int =
+      result = ord(a.status) - ord(b.status))
+
+  for r in filtered:
+    showLinkResult(r)
+
+  showLinkSummary(results)
+
+  if deleteDead:
+    let deadIds = results.filterIt(it.status == lsDead).mapIt(it.bookmark.id)
+    if deadIds.len > 0:
+      let removed = cfg.deleteBookmarks(deadIds)
+      infoMsg &"Deleted {removed} dead bookmark(s)"
+
 when isMainModule:
   dispatchMulti(
     [cmdImport, cmdName = "import", doc = "Import bookmarks from a file",
@@ -204,4 +297,9 @@ when isMainModule:
     [cmdModelDownload, cmdName = "model-download", doc = "Download model without running organise"],
     [cmdStatus, cmdName = "status", doc = "Show runtime and model status"],
     [cmdDoctor, cmdName = "doctor", doc = "Run self-diagnostic checks"],
+    [cmdDedup, cmdName = "dedup", doc = "Find and remove duplicate bookmarks",
+      help = {"interactive": "Review each duplicate group", "auto-remove": "Remove all duplicates without prompting"}],
+    [cmdCheckLinks, cmdName = "check-links", doc = "Check bookmarks for dead links",
+      help = {"concurrency": "Parallel requests", "dead-only": "Show only dead links",
+              "delete-dead": "Delete dead bookmarks", "unorganised": "Only check unorganized bookmarks"}],
   )

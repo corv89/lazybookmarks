@@ -1,4 +1,6 @@
-import std/[terminal, strutils]
+import std/[terminal, strutils, strformat]
+import ./storage
+import ./linkchecker
 
 proc infoMsg*(msg: string) =
   stdout.styledWriteLine(styleBright, fgGreen, "  ✓ ", fgDefault, resetStyle, msg)
@@ -59,3 +61,62 @@ proc reviewSuggestion*(url: string, title: string, targetFolder: string, confide
       stdout.write "\r\e[2K"
       stdout.write "  > "
       stdout.flushFile()
+
+proc reviewDuplicateGroup*(idx: int, total: int, group: DuplicateGroup): bool =
+  echo ""
+  stdout.styledWriteLine(styleBright, fgCyan, &"  Duplicate group {idx}/{total} ", resetStyle, styleDim, &"({group.reason})", resetStyle)
+  stdout.styledWriteLine(styleBright, "  Keep:  ", fgGreen, group.keep.title, resetStyle, styleDim, &"  [{group.keep.url[0..min(79, group.keep.url.high)]}]", resetStyle)
+  for i, d in group.dupes:
+    let title = if d.title.len > 0: d.title else: "(untitled)"
+    stdout.styledWriteLine(styleDim, "    - ", resetStyle, title, styleDim, &"  [{d.url[0..min(79, d.url.high)]}]", resetStyle)
+  stdout.styledWriteLine(styleBright, "  └─ ", resetStyle, styleDim, "[R]emove dupes  [S]kip  [q]uit", resetStyle)
+  stdout.write "  > "
+  stdout.flushFile()
+
+  while true:
+    let input = stdin.readLine().strip().toLowerAscii()
+    case input
+    of "r", "remove": return true
+    of "s", "skip": return false
+    of "q", "quit": return false
+    else:
+      stdout.write "\r\e[2K"
+      stdout.write "  > "
+      stdout.flushFile()
+
+proc showLinkResult*(r: LinkResult) =
+  let title = if r.bookmark.title.len > 0: r.bookmark.title else: "(untitled)"
+  let (label, color) = case r.status
+    of lsAlive: ("OK", fgGreen)
+    of lsDead: ("DEAD", fgRed)
+    of lsUnknown: ("???", fgYellow)
+    of lsRedirected: ("REDIR", fgCyan)
+  var extra = ""
+  if r.status == lsRedirected and r.redirectUrl.len > 0:
+    extra = &" -> {r.redirectUrl[0..min(60, r.redirectUrl.high)]}"
+  if r.statusCode > 0:
+    extra = &" [{r.statusCode}]{extra}"
+  stdout.styledWrite("  ", color, &"{label:<5}", resetStyle, &" {title:<50}", styleDim, &" {r.bookmark.url[0..min(60, r.bookmark.url.high)]}{extra}", resetStyle, "\n")
+
+proc showLinkSummary*(results: seq[LinkResult]) =
+  var alive = 0
+  var dead = 0
+  var unknown = 0
+  var redirected = 0
+  for r in results:
+    case r.status
+    of lsAlive: inc alive
+    of lsDead: inc dead
+    of lsUnknown: inc unknown
+    of lsRedirected: inc redirected
+  echo ""
+  stdout.styledWriteLine(styleBright, "  Summary:", resetStyle)
+  if alive > 0:
+    stdout.styledWriteLine("    ", fgGreen, &"{alive} alive", resetStyle)
+  if dead > 0:
+    stdout.styledWriteLine("    ", fgRed, &"{dead} dead", resetStyle)
+  if redirected > 0:
+    stdout.styledWriteLine("    ", fgCyan, &"{redirected} redirected", resetStyle)
+  if unknown > 0:
+    stdout.styledWriteLine("    ", fgYellow, &"{unknown} unknown", resetStyle)
+  echo ""
