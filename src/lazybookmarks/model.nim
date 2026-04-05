@@ -49,7 +49,7 @@ proc sha256File*(path: string): string =
     ctx.update(cast[ptr byte](buf[0].addr), uint(n))
   var digest: array[32, byte]
   ctx.finish(digest)
-  return digest.toHex()
+  return toLowerAscii(digest.toHex())
 
 proc formatBytes*(bytes: int64): string =
   if bytes < 1024: return $bytes & " B"
@@ -108,7 +108,7 @@ proc ensureModel*(cfg: Config, registry: ModelRegistry) =
   echo ""
 
   let actualHash = sha256File(partPath)
-  if actualHash != entry.digest.replace("sha256:", ""):
+  if actualHash != toLowerAscii(entry.digest.replace("sha256:", "")):
     stdout.styledWriteLine(styleBright, fgRed, "  ✗ ", fgDefault, resetStyle, "Checksum verification failed")
     removeFile(partPath)
     quit(1)
@@ -129,7 +129,7 @@ proc isEntryReady*(entry: ModelEntry, cfg: Config): bool =
     if not fileExists(modelPath): return false
     if fileExists(hashPath):
       return readFile(hashPath).strip() == entry.digest
-    return sha256File(modelPath) == entry.digest.replace("sha256:", "")
+    return sha256File(modelPath) == toLowerAscii(entry.digest.replace("sha256:", ""))
   except CatchableError:
     return false
 
