@@ -130,7 +130,7 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
         stderr.writeLine("[attempt " & $attempt & "] Error: " & e.msg)
       if attempt < maxRetries:
         let delay = 1000 * (1 shl (attempt - 1))
-        discard execShellCmd("sleep " & $(delay * 3 div 1000))
+        discard execShellCmd("sleep " & $(delay div 1000))
 
   raise newException(CatchableError, "chatCompletion failed after " & $maxRetries & " attempts: " & lastError)
 

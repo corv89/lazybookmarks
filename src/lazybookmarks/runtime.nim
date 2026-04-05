@@ -12,7 +12,7 @@ proc isRuntimeRunning*(cfg: Config): bool =
   try:
     let client = newHttpClient(timeout = 2000)
     defer: client.close()
-    discard client.getContent("http://127.0.0.1:11434/api/tags")
+    discard client.getContent(cfg.ollamaApiUrl() & "/api/tags")
     return true
   except:
     return false

@@ -1,5 +1,17 @@
 import std/strutils
 
+proc extractDomain*(url: string): string =
+  result = url
+  try:
+    let idx = result.find("://")
+    if idx >= 0:
+      result = result[idx + 3 .. ^1]
+    let slashIdx = result.find('/')
+    if slashIdx >= 0:
+      result = result[0 .. slashIdx - 1]
+  except:
+    discard
+
 const SystemPrompt* = "You are a bookmark classifier. Given a user's folder structure and uncategorized bookmarks, assign each to the most appropriate existing folder. If no folder fits well, set targetFolderId to \"__skip__\" instead of forcing a poor match. Respond with ONLY valid JSON matching the required structure. No explanation, no markdown, no other text. Prefer the user's existing folder names. Only suggest new folders when necessary."
 
 const TaxonomySchemaJson* = """{
@@ -48,13 +60,12 @@ proc buildClassificationSchemaJsonSmall*(): string =
 proc buildClusterSchemaJsonSmall*(): string =
   return "{\"type\":\"object\",\"properties\":{\"clusters\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"},\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"parentFolderId\":{\"type\":\"string\"}},\"required\":[\"name\",\"description\",\"keywords\",\"parentFolderId\"]}}},\"required\":[\"clusters\"]}"
 
-proc buildTaxonomyPrompt*(enrichedFolders: seq[tuple[id, path, count: string, domains, siblings, keywords, exemplars: string]]): string =
+proc buildTaxonomyPrompt*(enrichedFolders: seq[tuple[id, path, count: string, domains, keywords, exemplars: string]]): string =
   var lines: seq[string] = @[]
   for f in enrichedFolders:
     var parts: seq[string] = @[]
     parts.add("[" & f.id & "] " & f.path & " (" & f.count & ")")
     if f.domains.len > 0: parts.add("domains: " & f.domains)
-    if f.siblings.len > 0: parts.add("siblings: " & f.siblings)
     if f.keywords.len > 0: parts.add("keywords: " & f.keywords)
     if f.exemplars.len > 0: parts.add("examples: " & f.exemplars)
     lines.add(parts.join(" | "))
@@ -66,18 +77,9 @@ proc buildTaxonomyPrompt*(enrichedFolders: seq[tuple[id, path, count: string, do
 proc formatBookmarkBatch*(bookmarks: seq[tuple[id, title, url: string]]): string =
   var lines: seq[string] = @[]
   for b in bookmarks:
-    var shortUrl = b.url
-    try:
-      let idx = shortUrl.find("://")
-      if idx >= 0:
-        shortUrl = shortUrl[idx + 3 .. ^1]
-      let slashIdx = shortUrl.find('/')
-      if slashIdx >= 0:
-        shortUrl = shortUrl[0 .. slashIdx - 1]
-      if shortUrl.len > 60:
-        shortUrl = shortUrl[0 .. 56] & "..."
-    except:
-      discard
+    var shortUrl = extractDomain(b.url)
+    if shortUrl.len > 60:
+      shortUrl = shortUrl[0 .. 56] & "..."
     let title = if b.title.len > 0: b.title else: "(untitled)"
     lines.add("[" & b.id & "] \"" & title & "\" " & shortUrl)
   return lines.join("\n")

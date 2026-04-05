@@ -1,4 +1,4 @@
-import std/[os, strutils, strformat, httpclient, json, terminal]
+import std/[os, strformat, httpclient, json, terminal]
 import jsony
 import ./config
 
@@ -36,35 +36,35 @@ proc pullModel*(entry: ModelEntry) =
       "Failed to pull " & refStr)
     quit(1)
 
-proc listLocalModels*(): seq[string] =
+proc listLocalModels*(cfg: Config): seq[string] =
   result = @[]
   try:
     let client = newHttpClient(timeout = 5000)
     defer: client.close()
-    let body = client.getContent("http://127.0.0.1:11434/api/tags")
+    let body = client.getContent(cfg.ollamaApiUrl() & "/api/tags")
     let jsn = parseJson(body)
     for m in jsn["models"]:
       result.add(m["name"].getStr())
   except:
     discard
 
-proc isEntryReady*(entry: ModelEntry): bool =
+proc isEntryReady*(entry: ModelEntry, cfg: Config): bool =
   let refStr = ollamaRef(entry)
-  for localName in listLocalModels():
-    if localName == refStr or localName.startsWith(refStr & ":"):
+  for localName in listLocalModels(cfg):
+    if localName == refStr:
       return true
   return false
 
 proc isModelReady*(cfg: Config, registry: ModelRegistry): bool =
   try:
     let entry = findModel(registry, cfg.modelVariant)
-    return isEntryReady(entry)
+    return isEntryReady(entry, cfg)
   except:
     return false
 
 proc ensureModel*(cfg: Config, registry: ModelRegistry) =
   let entry = findModel(registry, cfg.modelVariant)
-  if not isEntryReady(entry):
+  if not isEntryReady(entry, cfg):
     pullModel(entry)
   else:
     stdout.styledWriteLine(styleBright, fgGreen, "  ✓ ", fgDefault, resetStyle,
@@ -74,7 +74,7 @@ proc listModels*(cfg: Config, registry: ModelRegistry) =
   echo ""
   for entry in registry.entries:
     let isCurrent = entry.name == cfg.modelVariant
-    let isReady = isEntryReady(entry)
+    let isReady = isEntryReady(entry, cfg)
     let marker = if isCurrent: " *" else: ""
     let status = if isReady: "[installed]" else: "[not installed]"
     let name = if isCurrent: entry.name & marker else: entry.name

@@ -12,7 +12,7 @@ proc ensureReady*(cfg: var Config, registry: ModelRegistry) =
   let entry = findModel(registry, cfg.modelVariant)
   cfg.modelName = ollamaRef(entry)
 
-  if not isEntryReady(entry):
+  if not isEntryReady(entry, cfg):
     pullModel(entry)
   else:
     infoMsg "Model ready: " & ollamaRef(entry)

@@ -1,4 +1,4 @@
-import std/[os, strutils, re]
+import std/[os, re, strutils]
 
 type ParamSize* = enum psSmall, psNormal
 
@@ -28,8 +28,13 @@ proc isSmallModel*(cfg: Config): bool =
 
 const DefaultLlmUrl* = "http://127.0.0.1:11434/v1"
 const DefaultModelVariant* = "qwen3.5-2b"
-const DefaultBatchSize* = 5
 const DefaultConcurrency* = 4
+
+proc ollamaApiUrl*(cfg: Config): string =
+  if cfg.llmUrl.endsWith("/v1"):
+    cfg.llmUrl[0 ..< cfg.llmUrl.len - 3]
+  else:
+    cfg.llmUrl
 
 proc xdgDataHome*: string =
   result = getEnv("XDG_DATA_HOME")
@@ -105,6 +110,3 @@ proc loadConfig*(overrides: Config = Config()): Config =
 
 proc dbPath*(cfg: Config): string =
   cfg.dataDir / "bookmarks.db"
-
-proc configFilePath*: string =
-  defaultConfigDir() / "config.toml"

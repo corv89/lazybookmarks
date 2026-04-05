@@ -1,4 +1,4 @@
-import std/[os, strutils, strformat, json, re, math, tables, algorithm, sequtils, sets, asyncdispatch]
+import std/[strutils, strformat, json, re, math, tables, algorithm, sequtils, sets, asyncdispatch]
 import db_connector/db_sqlite
 import ./config
 import ./storage
@@ -49,19 +49,9 @@ proc tokenizeText*(text: string): seq[string] =
 proc extractDomainPatterns*(bookmarks: seq[BookmarkEntry], threshold = 0.2): seq[string] =
   var counts: Table[string, int]
   for b in bookmarks:
-    try:
-      var url = b.url
-      let idx = url.find("://")
-      if idx >= 0:
-        url = url[idx + 3 .. ^1]
-      let slashIdx = url.find('/')
-      if slashIdx >= 0:
-        url = url[0 .. slashIdx - 1]
-      url = url.replace(re"^www\.", "")
-      if url.len > 0:
-        counts[url] = counts.getOrDefault(url, 0) + 1
-    except:
-      discard
+    let domain = extractDomain(b.url).replace(re"^www\.", "")
+    if domain.len > 0:
+      counts[domain] = counts.getOrDefault(domain, 0) + 1
   let total = max(1, bookmarks.len)
   result = @[]
   for domain, count in counts:
@@ -109,14 +99,7 @@ proc sampleExemplars*(bookmarks: seq[BookmarkEntry], count = 2): string =
   sorted.sort(proc(a, b: BookmarkEntry): int = cmp(b.addedAt, a.addedAt))
   var parts: seq[string] = @[]
   for i in 0 .. min(count - 1, sorted.high):
-    var host = sorted[i].url
-    try:
-      let idx = host.find("://")
-      if idx >= 0: host = host[idx + 3 .. ^1]
-      let slashIdx = host.find('/')
-      if slashIdx >= 0: host = host[0 .. slashIdx - 1]
-    except:
-      discard
+    let host = extractDomain(sorted[i].url)
     let title = if sorted[i].title.len > 40: sorted[i].title[0 .. 39] else: sorted[i].title
     parts.add("\"" & title & "\" " & host)
   return parts.join(" | ")
@@ -198,7 +181,7 @@ proc runTaxonomyPhase*(cfg: Config, folders: seq[FolderEntry],
 
   let tfidfMap = computeTFIDF(folderBookmarks, allBookmarks)
 
-  var enriched: seq[tuple[id, path, count: string, domains, siblings, keywords, exemplars: string]] = @[]
+  var enriched: seq[tuple[id, path, count: string, domains, keywords, exemplars: string]] = @[]
   for folder in folders:
     let bookmarks = folderBookmarks.getOrDefault(folder.uuid, @[])
     let domains = extractDomainPatterns(bookmarks)
@@ -210,7 +193,6 @@ proc runTaxonomyPhase*(cfg: Config, folders: seq[FolderEntry],
       path: folder.path,
       count: $folder.bookmarkCount,
       domains: domains.join(", "),
-      siblings: "",
       keywords: keywords.join(", "),
       exemplars: exemplars,
     ))
@@ -325,7 +307,7 @@ proc classifyBatchAsync(cfg: Config, batch: seq[BookmarkEntry],
           bookmarkTitle: bmTitle,
           bookmarkUrl: bmUrl,
           targetFolderId: targetId,
-          targetFolderPath: if isNew: targetPath & " (new)" else: targetPath,
+          targetFolderPath: targetPath,
           confidence: conf,
           reason: reason,
           isNewFolder: isNew,
@@ -408,11 +390,11 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
   echo ""
   return allSuggestions
 
-proc organizeBookmarks*(cfg: Config, autoAcceptAll: bool = false): int =
+proc organizeBookmarks*(cfg: Config, autoAcceptAll: bool = false, limit: int = 0): int =
   let db = cfg.initDb()
   defer: db.close()
 
-  let uncategorized = getUnorganisedBookmarks(cfg)
+  let uncategorized = getUnorganisedBookmarks(cfg, limit)
   let webUncategorized = uncategorized.filterIt(it.url.startsWith("http://") or it.url.startsWith("https://"))
 
   if webUncategorized.len == 0:
@@ -476,7 +458,9 @@ proc organizeBookmarks*(cfg: Config, autoAcceptAll: bool = false): int =
   var edited = 0
 
   for s in suggestions:
-    let action = reviewSuggestion(s.bookmarkUrl, s.bookmarkTitle, s.targetFolderPath, s.confidence, s.reason)
+    let displayPath = s.targetFolderPath & (if s.isNewFolder: " (new)" else: "")
+    let action = reviewSuggestion(s.bookmarkUrl, s.bookmarkTitle,
+      displayPath, s.confidence, s.reason)
 
     case action
     of ReviewAction.accept:

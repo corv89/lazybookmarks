@@ -1,6 +1,5 @@
 import std/[os, strutils, terminal, strformat]
 import cligen
-import db_connector/db_sqlite
 import ./config
 import ./storage
 import ./model
@@ -34,37 +33,22 @@ proc cmdImport(file: string, format = "auto", dryRun = false) =
 proc cmdOrganise(model = "", autoAcceptHigh = false, autoAcceptAll = false,
                   limit = 0, batchSize = 0, concurrency = 0, verbose = false) =
   let overrides = Config(modelVariant: model, batchSize: batchSize,
-                         concurrency: concurrency, verbose: verbose)
+                         concurrency: concurrency, verbose: verbose,
+                         autoAcceptHigh: autoAcceptHigh)
   var cfg = loadConfig(overrides)
   let registry = loadModelRegistry()
 
   ensureReady(cfg, registry)
-  discard cfg.organizeBookmarks(autoAcceptAll = autoAcceptAll)
+  discard cfg.organizeBookmarks(autoAcceptAll = autoAcceptAll, limit = limit)
 
-proc cmdList(category = "", unorganised = false, format = "table") =
+proc cmdList(category = "", unorganised = false) =
   let cfg = loadConfig()
-  let db = cfg.initDb()
-  defer: db.close()
-
   var bookmarks: seq[BookmarkEntry]
 
   if unorganised:
     bookmarks = getUnorganisedBookmarks(cfg)
   else:
-    var query = "SELECT id, url, title, raw_folder, category, confidence FROM bookmarks"
-    if category.len > 0:
-      let escaped = category.replace("'", "''")
-      query.add " WHERE raw_folder = '" & escaped & "'"
-    query.add " ORDER BY added_at DESC LIMIT 50"
-    for row in db.fastRows(sql(query)):
-      bookmarks.add(BookmarkEntry(
-        id: parseBiggestInt(row[0]),
-        url: row[1],
-        title: row[2],
-        rawFolder: row[3],
-        category: row[4],
-        confidence: row[5],
-      ))
+    bookmarks = listBookmarks(cfg, category)
 
   if bookmarks.len == 0:
     dimMsg "No bookmarks found."
@@ -72,27 +56,24 @@ proc cmdList(category = "", unorganised = false, format = "table") =
 
   for b in bookmarks:
     let title = if b.title.len > 0: b.title else: "(untitled)"
-    var category = "-"
-    if b.category.len > 0: category = b.category
-    elif b.rawFolder.len > 0: category = b.rawFolder
-    echo &"  {title:<50} {category}"
+    var cat = "-"
+    if b.category.len > 0: cat = b.category
+    elif b.rawFolder.len > 0: cat = b.rawFolder
+    echo &"  {title:<50} {cat}"
   echo &"\n  {bookmarks.len} bookmarks"
 
 proc cmdSearch(query: string) =
   let cfg = loadConfig()
-  let db = cfg.initDb()
-  defer: db.close()
+  let bookmarks = searchBookmarks(cfg, query)
 
-  let searchPattern = query.replace("'", "''")
-  let sqlQuery = &"SELECT url, title, raw_folder, category FROM bookmarks WHERE title LIKE '%{searchPattern}%' OR url LIKE '%{searchPattern}%' OR category LIKE '%{searchPattern}%' LIMIT 20"
+  if bookmarks.len == 0:
+    dimMsg &"No results for \"{query}\""
+    return
 
-  var found = 0
-  for row in db.fastRows(sql(sqlQuery)):
-    let title = if row[1].len > 0: row[1] else: "(untitled)"
-    echo &"  {title:<50} {row[0][0..min(79, row[0].high)]}"
-    found.inc
-
-  echo &"\n  {found} results for \"{query}\""
+  for b in bookmarks:
+    let title = if b.title.len > 0: b.title else: "(untitled)"
+    echo &"  {title:<50} {b.url[0..min(79, b.url.high)]}"
+  echo &"\n  {bookmarks.len} results for \"{query}\""
 
 proc cmdUndo =
   let cfg = loadConfig()
@@ -114,8 +95,18 @@ proc cmdModelSet(variant: string) =
   var content = ""
   if fileExists(configPath):
     content = readFile(configPath)
-  content.add &"\nmodelVariant = \"{variant}\"\n"
-  writeFile(configPath, content)
+  var lines = content.splitLines()
+  var replaced = false
+  var newLines: seq[string] = @[]
+  for line in lines:
+    if line.strip().startsWith("modelVariant"):
+      newLines.add(&"modelVariant = \"{variant}\"")
+      replaced = true
+    else:
+      newLines.add(line)
+  if not replaced:
+    newLines.add(&"modelVariant = \"{variant}\"")
+  writeFile(configPath, newLines.join("\n") & "\n")
   infoMsg &"Default model set to {variant}"
 
 proc cmdModelDownload =
@@ -203,7 +194,7 @@ when isMainModule:
               "batch-size": "Bookmarks per LLM request (0=auto)", "concurrency": "Parallel LLM requests (0=auto)",
               "verbose": "Show debug output"}],
     [cmdList, cmdName = "list", doc = "List bookmarks",
-      help = {"category": "Filter by folder path", "unorganised": "Show only unorganized", "format": "table|json|csv"}],
+      help = {"category": "Filter by folder path", "unorganised": "Show only unorganized"}],
     [cmdSearch, cmdName = "search", doc = "Search bookmarks",
       help = {"query": "Search term"}],
     [cmdUndo, cmdName = "undo", doc = "Undo last batch of classifications"],

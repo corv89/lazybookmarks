@@ -11,12 +11,8 @@ type
     title*:    string
     rawFolder*: string
     category*: string
-    tags*:     string
-    summary*:  string
-    language*: string
     confidence*: string
     reason*:   string
-    source*:   string
     importId*: int64
     organisedAt*: int64
     addedAt*:  int64
@@ -28,13 +24,6 @@ type
     parentId*: int64
     bookmarkCount*: int
 
-  ImportEntry* = object
-    id*:           int64
-    filename*:     string
-    format*:       string
-    importedAt*:   int64
-    bookmarkCount*: int
-
 const Schema = """
 CREATE TABLE IF NOT EXISTS bookmarks (
   id            INTEGER PRIMARY KEY,
@@ -42,12 +31,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   title         TEXT,
   raw_folder    TEXT,
   category      TEXT,
-  tags          TEXT,
-  summary       TEXT,
-  language      TEXT,
   confidence    TEXT CHECK(confidence IN ('high','medium','low',NULL)),
   reason        TEXT,
-  source        TEXT,
   import_id     INTEGER REFERENCES imports(id),
   organised_at  INTEGER,
   added_at      INTEGER
@@ -213,7 +198,7 @@ proc importBookmarks*(cfg: Config, content: string, format: string, filename: st
       discard db.getOrCreateFolder(folder)
     try:
       db.exec(
-        sql("INSERT INTO bookmarks (url, title, raw_folder, source, import_id, added_at) VALUES (?, ?, ?, 'import', ?, ?)"),
+        sql("INSERT INTO bookmarks (url, title, raw_folder, import_id, added_at) VALUES (?, ?, ?, ?, ?)"),
         url, title, folder, importId, now
       )
       count.inc
@@ -226,7 +211,7 @@ proc getUnorganisedBookmarks*(cfg: Config, limit: int = 0): seq[BookmarkEntry] =
   let db = cfg.initDb()
   defer: db.close()
 
-  var query = "SELECT id, url, title, raw_folder, category, tags, summary, language, confidence, reason, source, import_id, organised_at, added_at FROM bookmarks WHERE organised_at IS NULL"
+  var query = "SELECT id, url, title, raw_folder, category, confidence FROM bookmarks WHERE organised_at IS NULL"
   if limit > 0:
     query.add &" LIMIT {limit}"
   query.add " ORDER BY added_at DESC"
@@ -238,15 +223,52 @@ proc getUnorganisedBookmarks*(cfg: Config, limit: int = 0): seq[BookmarkEntry] =
       title:     row[2],
       rawFolder: row[3],
       category:  row[4],
-      tags:      row[5],
-      summary:   row[6],
-      language:  row[7],
-      confidence: row[8],
-      reason:    row[9],
-      source:    row[10],
-      importId:  if row[11].len > 0: parseBiggestInt(row[11]) else: 0,
-      organisedAt: if row[12].len > 0: parseBiggestInt(row[12]) else: 0,
-      addedAt:   if row[13].len > 0: parseBiggestInt(row[13]) else: 0,
+      confidence: row[5],
+    ))
+
+proc listBookmarks*(cfg: Config, category: string = ""): seq[BookmarkEntry] =
+  let db = cfg.initDb()
+  defer: db.close()
+
+  if category.len > 0:
+    for row in db.fastRows(sql(
+        "SELECT id, url, title, raw_folder, category, confidence FROM bookmarks WHERE raw_folder = ? ORDER BY added_at DESC LIMIT 50"),
+        category):
+      result.add(BookmarkEntry(
+        id:        parseBiggestInt(row[0]),
+        url:       row[1],
+        title:     row[2],
+        rawFolder: row[3],
+        category:  row[4],
+        confidence: row[5],
+      ))
+  else:
+    for row in db.fastRows(sql(
+        "SELECT id, url, title, raw_folder, category, confidence FROM bookmarks ORDER BY added_at DESC LIMIT 50")):
+      result.add(BookmarkEntry(
+        id:        parseBiggestInt(row[0]),
+        url:       row[1],
+        title:     row[2],
+        rawFolder: row[3],
+        category:  row[4],
+        confidence: row[5],
+      ))
+
+proc searchBookmarks*(cfg: Config, query: string): seq[BookmarkEntry] =
+  let db = cfg.initDb()
+  defer: db.close()
+
+  let pattern = "%" & query & "%"
+  for row in db.fastRows(sql(
+      "SELECT id, url, title, raw_folder, category, confidence FROM bookmarks WHERE title LIKE ? OR url LIKE ? OR category LIKE ? LIMIT 20"),
+      pattern, pattern, pattern):
+    result.add(BookmarkEntry(
+      id:        parseBiggestInt(row[0]),
+      url:       row[1],
+      title:     row[2],
+      rawFolder: row[3],
+      category:  row[4],
+      confidence: row[5],
     ))
 
 proc getAllFolders*(cfg: Config): seq[FolderEntry] =
