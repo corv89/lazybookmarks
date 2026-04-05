@@ -19,7 +19,7 @@ requires "jsony >= 1.1"
 # Tasks
 
 task build, "Build release binary":
-  exec "nim c -d:release -o:build/lazybookmarks src/lazybookmarks/main.nim"
+  exec "nim c -d:release -d:ssl -o:build/lazybookmarks src/lazybookmarks/main.nim"
 
 task buildDebug, "Build debug binary":
-  exec "nim c -o:build/lazybookmarks src/lazybookmarks/main.nim"
+  exec "nim c -d:ssl -o:build/lazybookmarks src/lazybookmarks/main.nim"
