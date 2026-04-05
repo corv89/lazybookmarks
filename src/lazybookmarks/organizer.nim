@@ -1,4 +1,4 @@
-import std/[os, strutils, strformat, json, re, math, tables, algorithm, sequtils, sets]
+import std/[os, strutils, strformat, json, re, math, tables, algorithm, sequtils, sets, asyncdispatch]
 import db_connector/db_sqlite
 import ./config
 import ./storage
@@ -277,6 +277,66 @@ proc chunk*[T](s: seq[T], size: int): seq[seq[T]] =
     result.add(batch)
     i += size
 
+proc classifyBatchAsync(cfg: Config, batch: seq[BookmarkEntry],
+                        fullTaxonomy: Taxonomy,
+                        tfidfMap: Table[string, seq[string]],
+                        batchIndex: int): Future[seq[Suggestion]] {.async.} =
+  let pruned = pruneTaxonomy(fullTaxonomy, batch, tfidfMap)
+  let folderIds = pruned.categories.mapIt(it.folderId)
+  let bookmarkIds = batch.mapIt($it.id)
+  let schema = if cfg.isSmallModel(): buildClassificationSchemaJsonSmall()
+               else: buildClassificationSchemaJson(folderIds, bookmarkIds)
+
+  let taxCats = pruned.categories.mapIt(
+    (id: it.folderId, path: it.folderPath, description: it.description, keywords: it.keywords.join(", "))
+  )
+  let batchTuples = batch.mapIt((id: $it.id, title: it.title, url: it.url))
+  let prompt = buildClassificationPrompt(taxCats, batchTuples)
+
+  try:
+    let response = await chatCompletionSimpleAsync(cfg, SystemPrompt, prompt, schema)
+    var suggestions: seq[Suggestion] = @[]
+
+    if response.hasKey("moves"):
+      for move in response["moves"]:
+        let moveObj = move
+        let bmId = parseBiggestInt(moveObj["bookmarkId"].getStr())
+        let targetId = moveObj["targetFolderId"].getStr()
+        let conf = moveObj["confidence"].getStr()
+        let reason = moveObj["reason"].getStr()
+
+        if targetId == "__skip__":
+          continue
+
+        let bmIdx = batch.findIt(it.id == bmId)
+        var bmTitle = ""
+        var bmUrl = ""
+        if bmIdx >= 0:
+          bmTitle = batch[bmIdx].title
+          bmUrl = batch[bmIdx].url
+        let targetIdx = pruned.categories.findIt(it.folderId == targetId)
+        var targetPath = targetId
+        if targetIdx >= 0:
+          targetPath = pruned.categories[targetIdx].folderPath
+        let isNew = targetId.startsWith("__new_")
+
+        suggestions.add(Suggestion(
+          bookmarkId: bmId,
+          bookmarkTitle: bmTitle,
+          bookmarkUrl: bmUrl,
+          targetFolderId: targetId,
+          targetFolderPath: if isNew: targetPath & " (new)" else: targetPath,
+          confidence: conf,
+          reason: reason,
+          isNewFolder: isNew,
+        ))
+
+    return suggestions
+  except CatchableError as e:
+    if cfg.verbose:
+      errorMsg &"Batch {batchIndex + 1} failed: {e.msg}"
+    return @[]
+
 proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
                              taxonomy: Taxonomy,
                              folderBookmarks: Table[string, seq[BookmarkEntry]],
@@ -294,63 +354,56 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
 
   let tfidfMap = computeTFIDF(folderBookmarks, allBookmarks)
 
-  var allSuggestions: seq[Suggestion] = @[]
   let batches = uncategorized.chunk(cfg.batchSize)
+  let conc = cfg.concurrency
 
-  for i, batch in batches:
-    showProgressBar(i + 1, batches.len, "Classifying bookmarks")
+  if batches.len == 0:
+    return @[]
 
-    let pruned = pruneTaxonomy(fullTaxonomy, batch, tfidfMap)
-    let folderIds = pruned.categories.mapIt(it.folderId)
-    let bookmarkIds = batch.mapIt($it.id)
-    let schema = if cfg.isSmallModel(): buildClassificationSchemaJsonSmall()
-                 else: buildClassificationSchemaJson(folderIds, bookmarkIds)
+  var completedCount = 0
+  var allSuggestions: seq[Suggestion] = @[]
 
-    let taxCats = pruned.categories.mapIt(
-      (id: it.folderId, path: it.folderPath, description: it.description, keywords: it.keywords.join(", "))
-    )
-    let batchTuples = batch.mapIt((id: $it.id, title: it.title, url: it.url))
-    let prompt = buildClassificationPrompt(taxCats, batchTuples)
+  if conc <= 1:
+    for i, batch in batches:
+      showProgressBar(i + 1, batches.len, "Classifying bookmarks")
+      let suggestions = classifyBatchAsync(cfg, batch, fullTaxonomy, tfidfMap, i).waitFor()
+      allSuggestions.add(suggestions)
+    echo ""
+    return allSuggestions
 
-    try:
-      let response = chatCompletionSimple(cfg, SystemPrompt, prompt, schema)
+  var pending: seq[Future[seq[Suggestion]]] = @[]
+  var batchIdx = 0
 
-      if response.hasKey("moves"):
-        for move in response["moves"]:
-          let moveObj = move
-          let bmId = parseBiggestInt(moveObj["bookmarkId"].getStr())
-          let targetId = moveObj["targetFolderId"].getStr()
-          let conf = moveObj["confidence"].getStr()
-          let reason = moveObj["reason"].getStr()
+  proc drainPending(): int =
+    var drained = 0
+    var i = 0
+    while i < pending.len:
+      if pending[i].finished:
+        let batchResult = pending[i].read()
+        pending.delete(i)
+        inc completedCount
+        showProgressBar(completedCount, batches.len, "Classifying bookmarks")
+        allSuggestions.add(batchResult)
+        inc drained
+      else:
+        inc i
+    return drained
 
-          if targetId == "__skip__":
-            continue
+  while batchIdx < batches.len:
+    while pending.len < conc and batchIdx < batches.len:
+      pending.add(classifyBatchAsync(cfg, batches[batchIdx], fullTaxonomy, tfidfMap, batchIdx))
+      inc batchIdx
 
-          let bmIdx = batch.findIt(it.id == bmId)
-          var bmTitle = ""
-          var bmUrl = ""
-          if bmIdx >= 0:
-            bmTitle = batch[bmIdx].title
-            bmUrl = batch[bmIdx].url
-          let targetIdx = pruned.categories.findIt(it.folderId == targetId)
-          var targetPath = targetId
-          if targetIdx >= 0:
-            targetPath = pruned.categories[targetIdx].folderPath
-          let isNew = targetId.startsWith("__new_")
+    while not pending[0].finished:
+      if drainPending() > 0 and pending.len == 0: break
 
-          allSuggestions.add(Suggestion(
-            bookmarkId: bmId,
-            bookmarkTitle: bmTitle,
-            bookmarkUrl: bmUrl,
-            targetFolderId: targetId,
-            targetFolderPath: if isNew: targetPath & " (new)" else: targetPath,
-            confidence: conf,
-            reason: reason,
-            isNewFolder: isNew,
-          ))
-    except CatchableError as e:
-      if cfg.verbose:
-        errorMsg &"Batch {i + 1} failed: {e.msg}"
+    discard drainPending()
+
+  while pending.len > 0:
+    if not pending[0].finished:
+      poll()
+    else:
+      discard drainPending()
 
   echo ""
   return allSuggestions

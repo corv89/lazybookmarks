@@ -1,4 +1,4 @@
-import std/[httpclient, json, os, re, strutils]
+import std/[httpclient, json, os, re, strutils, asyncdispatch]
 import ./config
 
 type
@@ -67,10 +67,8 @@ proc extractJson*(s: string): string =
     return closeJson(cleaned[start .. cleaned.high])
   return cleaned[start .. endPos]
 
-proc chatCompletion*(cfg: Config, messages: seq[Message],
-                    jsonSchema: string = "",
-                    maxRetries: int = 3): JsonNode =
-  let body = %*{
+proc buildRequestBody(cfg: Config, messages: seq[Message], jsonSchema: string): JsonNode =
+  result = %*{
     "model": cfg.modelName,
     "messages": messages,
     "temperature": 0.1,
@@ -79,18 +77,22 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
       "think": false,
     },
   }
-
   if jsonSchema.len > 0:
     if cfg.isSmallModel():
-      body["response_format"] = %*{ "type": "json_object" }
+      result["response_format"] = %*{ "type": "json_object" }
     else:
-      body["response_format"] = %*{
+      result["response_format"] = %*{
         "type": "json_schema",
         "json_schema": {
           "strict": true,
           "schema": parseJson(jsonSchema),
         }
       }
+
+proc chatCompletion*(cfg: Config, messages: seq[Message],
+                    jsonSchema: string = "",
+                    maxRetries: int = 3): JsonNode =
+  let body = buildRequestBody(cfg, messages, jsonSchema)
 
   let client = newHttpClient(timeout = 120000)
   client.headers = newHttpHeaders([("Content-Type", "application/json")])
@@ -133,9 +135,69 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
   raise newException(CatchableError, "chatCompletion failed after " & $maxRetries & " attempts: " & lastError)
 
 proc chatCompletionSimple*(cfg: Config, systemPrompt: string, userMessage: string,
-                           jsonSchema: string = ""): JsonNode =
+                            jsonSchema: string = ""): JsonNode =
   let messages = @[
     Message(role: "system", content: systemPrompt),
     Message(role: "user", content: userMessage),
   ]
   return chatCompletion(cfg, messages, jsonSchema)
+
+proc chatCompletionAsync*(cfg: Config, messages: seq[Message],
+                          jsonSchema: string = "",
+                          maxRetries: int = 3): Future[JsonNode] {.async.} =
+  let body = buildRequestBody(cfg, messages, jsonSchema)
+  let url = cfg.llmUrl & "/chat/completions"
+
+  if cfg.verbose:
+    stderr.writeLine("[chat-async] POST " & url & " model=" & cfg.modelName)
+
+  var lastError = ""
+  for attempt in 1..maxRetries:
+    try:
+      let client = newAsyncHttpClient()
+      client.headers = newHttpHeaders([("Content-Type", "application/json")])
+
+      let postFut = client.postContent(url, body = $body)
+      let timedOut = not await withTimeout(postFut, 120_000)
+      client.close()
+
+      if timedOut:
+        lastError = "Request timed out (120s)"
+        if cfg.verbose:
+          stderr.writeLine("[attempt " & $attempt & "] Timeout")
+      else:
+        let response = postFut.read()
+
+        if cfg.verbose:
+          stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
+
+        let parsed = parseJson(response)
+        if parsed.hasKey("choices") and parsed["choices"].len > 0:
+          let rawContent = parsed["choices"][0]["message"]["content"].getStr()
+          let content = extractJson(rawContent)
+          if content.len > 0:
+            if cfg.verbose:
+              stderr.writeLine("[chat-async] response: " & content[0..min(200, content.high)])
+            return parseJson(content)
+          else:
+            lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
+        else:
+          lastError = "No choices in response: " & response[0..min(200, response.high)]
+    except CatchableError as e:
+      lastError = e.msg
+      if cfg.verbose:
+        stderr.writeLine("[attempt " & $attempt & "] Error: " & e.msg)
+
+    if attempt < maxRetries:
+      let delay = 1000 * (1 shl (attempt - 1))
+      await sleepAsync(delay)
+
+  raise newException(CatchableError, "chatCompletionAsync failed after " & $maxRetries & " attempts: " & lastError)
+
+proc chatCompletionSimpleAsync*(cfg: Config, systemPrompt: string, userMessage: string,
+                                jsonSchema: string = ""): Future[JsonNode] {.async.} =
+  let messages = @[
+    Message(role: "system", content: systemPrompt),
+    Message(role: "user", content: userMessage),
+  ]
+  return await chatCompletionAsync(cfg, messages, jsonSchema)

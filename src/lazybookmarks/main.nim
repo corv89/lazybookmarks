@@ -32,8 +32,9 @@ proc cmdImport(file: string, format = "auto", dryRun = false) =
   infoMsg &"Imported {count} bookmarks from {file} (format: {detectedFormat})"
 
 proc cmdOrganise(model = "", autoAcceptHigh = false, autoAcceptAll = false,
-                 limit = 0, verbose = false) =
-  let overrides = Config(modelVariant: model, verbose: verbose)
+                  limit = 0, batchSize = 0, concurrency = 0, verbose = false) =
+  let overrides = Config(modelVariant: model, batchSize: batchSize,
+                         concurrency: concurrency, verbose: verbose)
   var cfg = loadConfig(overrides)
   let registry = loadModelRegistry()
 
@@ -198,7 +199,9 @@ when isMainModule:
       help = {"file": "Path to bookmark file", "format": "Format: auto|html|json|urllist", "dry-run": "Parse only, no database write"}],
     [cmdOrganise, cmdName = "organise", doc = "AI-organize unorganized bookmarks",
       help = {"model": "Override model variant", "auto-accept-high": "Skip review for high confidence",
-              "auto-accept-all": "Accept all suggestions", "limit": "Max bookmarks to process", "verbose": "Show debug output"}],
+              "auto-accept-all": "Accept all suggestions", "limit": "Max bookmarks to process",
+              "batch-size": "Bookmarks per LLM request (0=auto)", "concurrency": "Parallel LLM requests (0=auto)",
+              "verbose": "Show debug output"}],
     [cmdList, cmdName = "list", doc = "List bookmarks",
       help = {"category": "Filter by folder path", "unorganised": "Show only unorganized", "format": "table|json|csv"}],
     [cmdSearch, cmdName = "search", doc = "Search bookmarks",

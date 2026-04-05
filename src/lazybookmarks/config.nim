@@ -10,6 +10,7 @@ type Config* = object
   runtimeManaged*: bool
   autoAcceptHigh*: bool
   batchSize*:      int
+  concurrency*:    int
   verbose*:        bool
   paramSize*:      ParamSize
 
@@ -27,7 +28,8 @@ proc isSmallModel*(cfg: Config): bool =
 
 const DefaultLlmUrl* = "http://127.0.0.1:11434/v1"
 const DefaultModelVariant* = "qwen3.5-2b"
-const DefaultBatchSize* = 1
+const DefaultBatchSize* = 5
+const DefaultConcurrency* = 4
 
 proc xdgDataHome*: string =
   result = getEnv("XDG_DATA_HOME")
@@ -52,15 +54,18 @@ proc loadConfig*(overrides: Config = Config()): Config =
   let variant = if overrides.modelVariant.len > 0: overrides.modelVariant
                 elif getEnv("LB_MODEL").len > 0: getEnv("LB_MODEL")
                 else: DefaultModelVariant
+  let ps = parseParamSize(variant)
+  let defaultBatch = if ps == psSmall: 5 else: 10
   result = Config(
     llmUrl:         DefaultLlmUrl,
     modelVariant:   variant,
     dataDir:        defaultDataDir(),
     runtimeManaged: true,
     autoAcceptHigh: false,
-    batchSize:      DefaultBatchSize,
+    batchSize:      defaultBatch,
+    concurrency:    DefaultConcurrency,
     verbose:        false,
-    paramSize:      parseParamSize(variant),
+    paramSize:      ps,
   )
 
   let envLlmUrl = getEnv("LLM_URL")
@@ -91,6 +96,8 @@ proc loadConfig*(overrides: Config = Config()): Config =
     result.dataDir = overrides.dataDir
   if overrides.batchSize > 0:
     result.batchSize = overrides.batchSize
+  if overrides.concurrency > 0:
+    result.concurrency = overrides.concurrency
   if overrides.verbose:
     result.verbose = true
   if overrides.autoAcceptHigh:
