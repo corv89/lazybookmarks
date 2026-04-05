@@ -3,30 +3,22 @@
     {
       "name": "qwen3.5-0.8b",
       "ollamaModel": "qwen3.5",
-      "ollamaTag": "0.8b",
-      "digest": "sha256:afb707b6b8fac6e475acc42bc8380fc0b8d2e0e4190be5a969fbf62fcc897db5",
-      "sizeBytes": 1036034688
+      "ollamaTag": "0.8b"
     },
     {
       "name": "qwen3.5-2b",
       "ollamaModel": "qwen3.5",
-      "ollamaTag": "2b",
-      "digest": "sha256:b709d81508a078a686961de6ca07a953b895d9b286c46e17f00fb267f4f2d297",
-      "sizeBytes": 2741180928
+      "ollamaTag": "2b"
     },
     {
       "name": "qwen3.5-4b",
       "ollamaModel": "qwen3.5",
-      "ollamaTag": "4b",
-      "digest": "sha256:81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490",
-      "sizeBytes": 3389971840
+      "ollamaTag": "4b"
     },
     {
       "name": "gemma4-e2b",
       "ollamaModel": "gemma4",
-      "ollamaTag": "e2b",
-      "digest": "sha256:4e30e2665218745ef463f722c0bf86be0cab6ee676320f1cfadf91e989107448",
-      "sizeBytes": 7162394016
+      "ollamaTag": "e2b"
     }
   ]
 }

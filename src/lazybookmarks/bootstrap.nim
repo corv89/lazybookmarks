@@ -3,22 +3,25 @@ import ./model
 import ./runtime
 import ./ui
 
-proc ensureReady*(cfg: Config, registry: ModelRegistry) =
+proc ensureReady*(cfg: var Config, registry: ModelRegistry) =
   if not cfg.runtimeManaged:
     return
 
   if not isRuntimeRunning(cfg):
-    discard downloadRuntime(cfg)
-    ensureModel(cfg, registry)
-    let modelPath = getModelPath(cfg, registry)
-    discard spawnRuntime(cfg, modelPath)
+    discard spawnRuntime(cfg)
 
-    infoMsg "Waiting for runtime to start..."
+    infoMsg "Waiting for ollama to start..."
     if not pollHealth(cfg):
-      errorMsg "Runtime failed to start within timeout. Check logs:"
+      errorMsg "Ollama failed to start. Check logs:"
       dimMsg cfg.logFilePath()
       quit(1)
 
-    infoMsg "Runtime ready"
+    infoMsg "Ollama ready"
+
+  let entry = findModel(registry, cfg.modelVariant)
+  cfg.modelName = ollamaRef(entry)
+
+  if not isEntryReady(entry):
+    pullModel(entry)
   else:
-    ensureModel(cfg, registry)
+    infoMsg "Model ready: " & ollamaRef(entry)

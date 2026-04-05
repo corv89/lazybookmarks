@@ -3,13 +3,14 @@ import std/os
 type Config* = object
   llmUrl*:         string
   modelVariant*:   string
+  modelName*:      string
   dataDir*:        string
   runtimeManaged*: bool
   autoAcceptHigh*: bool
   batchSize*:      int
   verbose*:        bool
 
-const DefaultLlmUrl* = "http://127.0.0.1:18080/v1"
+const DefaultLlmUrl* = "http://127.0.0.1:11434/v1"
 const DefaultModelVariant* = "qwen3.5-0.8b"
 const DefaultBatchSize* = 1
 
@@ -77,23 +78,14 @@ proc loadConfig*(overrides: Config = Config()): Config =
 proc dbPath*(cfg: Config): string =
   cfg.dataDir / "bookmarks.db"
 
-proc binDir*(cfg: Config): string =
-  cfg.dataDir / "bin"
-
-proc modelsDir*(cfg: Config): string =
-  cfg.dataDir / "models"
-
 proc logsDir*(cfg: Config): string =
   cfg.dataDir / "logs"
-
-proc runtimeBinPath*(cfg: Config): string =
-  cfg.binDir() / "llama-server"
 
 proc pidFilePath*(cfg: Config): string =
   cfg.dataDir / "runtime.pid"
 
 proc logFilePath*(cfg: Config): string =
-  cfg.logsDir() / "llama-server.log"
+  cfg.logsDir() / "ollama.log"
 
 proc configFilePath*: string =
   defaultConfigDir() / "config.toml"

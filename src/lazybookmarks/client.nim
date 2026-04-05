@@ -10,7 +10,7 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
                     jsonSchema: string = "",
                     maxRetries: int = 3): JsonNode =
   let body = %*{
-    "model": "local",
+    "model": cfg.modelName,
     "messages": messages,
     "temperature": 0.1,
     "max_tokens": 1024,

@@ -34,7 +34,7 @@ proc cmdImport(file: string, format = "auto", dryRun = false) =
 proc cmdOrganise(model = "", autoAcceptHigh = false, autoAcceptAll = false,
                  limit = 0, verbose = false) =
   let overrides = Config(modelVariant: model, verbose: verbose)
-  let cfg = loadConfig(overrides)
+  var cfg = loadConfig(overrides)
   let registry = loadModelRegistry()
 
   ensureReady(cfg, registry)
@@ -153,13 +153,13 @@ proc cmdDoctor =
     warnMsg "Database not found (will be created on first import)"
     issues.inc
 
-  let binPath = cfg.runtimeBinPath()
-  if fileExists(binPath):
-    infoMsg &"Runtime: {binPath}"
+  let ollamaBin = findOllamaBin()
+  if ollamaBin.len > 0:
+    infoMsg &"Ollama: {ollamaBin}"
   elif not cfg.runtimeManaged:
     dimMsg "Runtime: using external endpoint"
   else:
-    warnMsg "Runtime not downloaded (will download on first organise)"
+    warnMsg "Ollama not found in PATH (install from https://ollama.com)"
     issues.inc
 
   let registry = loadModelRegistry()
@@ -174,7 +174,7 @@ proc cmdDoctor =
   try:
     let client = newHttpClient(timeout = 3000)
     defer: client.close()
-    discard client.getContent(&"{cfg.llmUrl}/models")
+    discard client.getContent("http://127.0.0.1:11434/api/tags")
     infoMsg &"Endpoint reachable: {cfg.llmUrl}"
   except:
     if cfg.runtimeManaged:
