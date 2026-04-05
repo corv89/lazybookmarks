@@ -1,4 +1,6 @@
-import std/os
+import std/[os, strutils, re]
+
+type ParamSize* = enum psSmall, psNormal
 
 type Config* = object
   llmUrl*:         string
@@ -9,6 +11,19 @@ type Config* = object
   autoAcceptHigh*: bool
   batchSize*:      int
   verbose*:        bool
+  paramSize*:      ParamSize
+
+proc parseParamSize*(variant: string): ParamSize =
+  for m in variant.findAll(re"[\d.]+[bB]"):
+    let numPart = m[0 ..< m.len - 1]
+    try:
+      if parseFloat(numPart) < 1.5: return psSmall
+    except:
+      discard
+  return psNormal
+
+proc isSmallModel*(cfg: Config): bool =
+  cfg.paramSize == psSmall
 
 const DefaultLlmUrl* = "http://127.0.0.1:11434/v1"
 const DefaultModelVariant* = "qwen3.5-2b"
@@ -34,14 +49,18 @@ proc ensureDir*(dir: string) =
   createDir(dir)
 
 proc loadConfig*(overrides: Config = Config()): Config =
+  let variant = if overrides.modelVariant.len > 0: overrides.modelVariant
+                elif getEnv("LB_MODEL").len > 0: getEnv("LB_MODEL")
+                else: DefaultModelVariant
   result = Config(
     llmUrl:         DefaultLlmUrl,
-    modelVariant:   DefaultModelVariant,
+    modelVariant:   variant,
     dataDir:        defaultDataDir(),
     runtimeManaged: true,
     autoAcceptHigh: false,
     batchSize:      DefaultBatchSize,
     verbose:        false,
+    paramSize:      parseParamSize(variant),
   )
 
   let envLlmUrl = getEnv("LLM_URL")
@@ -52,6 +71,7 @@ proc loadConfig*(overrides: Config = Config()): Config =
   let envModel = getEnv("LB_MODEL")
   if envModel.len > 0:
     result.modelVariant = envModel
+    result.paramSize = parseParamSize(envModel)
 
   let envDataDir = getEnv("LB_DATA_DIR")
   if envDataDir.len > 0:
@@ -66,6 +86,7 @@ proc loadConfig*(overrides: Config = Config()): Config =
     result.runtimeManaged = false
   if overrides.modelVariant.len > 0:
     result.modelVariant = overrides.modelVariant
+    result.paramSize = parseParamSize(overrides.modelVariant)
   if overrides.dataDir.len > 0:
     result.dataDir = overrides.dataDir
   if overrides.batchSize > 0:

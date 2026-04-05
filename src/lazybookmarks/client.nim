@@ -8,21 +8,63 @@ type
 
 proc stripThinkTags*(s: string): string =
   result = s
-  result = result.replace(re"<think>[\s\S]*?</think>", "")
+  result = result.replace(re"💭[\s\S]*?💭", "")
+  result = result.replace(re"</?💭[^>]*>", "")
   result = result.replace(re"<system-reminder>[\s\S]*?</system-reminder>", "")
-  result = result.replace(re"</?[\w][\w-]*[^>]*>", "")
+  result = result.replace(re"```json\s*", "")
+  result = result.replace(re"```\s*$", "")
   result = result.strip()
 
+proc closeJson*(s: string): string =
+  var opens: seq[char] = @[]
+  var inStr = false
+  var j = 0
+  while j < s.len:
+    if not inStr:
+      case s[j]
+      of '{', '[': opens.add(s[j])
+      of '}':
+        if opens.len > 0 and opens[opens.high] == '{': discard opens.pop()
+      of ']':
+        if opens.len > 0 and opens[opens.high] == '[': discard opens.pop()
+      of '"': inStr = true
+      else: discard
+    else:
+      if s[j] == '"' and (j == 0 or s[j - 1] != '\\'):
+        inStr = false
+    inc j
+  result = s
+  var k = opens.high
+  while k >= 0:
+    let closing = if opens[k] == '{': '}' else: ']'
+    result.add(closing)
+    dec k
+
 proc extractJson*(s: string): string =
-  let cleaned = stripThinkTags(s)
+  var cleaned = stripThinkTags(s)
   let start = cleaned.find('{')
   if start < 0:
     return ""
-  var endPos = cleaned.high
-  while endPos > start and cleaned[endPos] != '}':
-    dec endPos
-  if endPos <= start:
-    return ""
+  var depth = 0
+  var inStr = false
+  var endPos = -1
+  for i in start .. cleaned.high:
+    let c = cleaned[i]
+    if inStr:
+      if c == '"' and (i == 0 or cleaned[i - 1] != '\\'):
+        inStr = false
+    else:
+      case c
+      of '"': inStr = true
+      of '{': inc depth
+      of '}':
+        dec depth
+        if depth == 0:
+          endPos = i
+          break
+      else: discard
+  if endPos < 0:
+    return closeJson(cleaned[start .. cleaned.high])
   return cleaned[start .. endPos]
 
 proc chatCompletion*(cfg: Config, messages: seq[Message],
@@ -39,13 +81,16 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
   }
 
   if jsonSchema.len > 0:
-    body["response_format"] = %*{
-      "type": "json_schema",
-      "json_schema": {
-        "strict": true,
-        "schema": parseJson(jsonSchema),
+    if cfg.isSmallModel():
+      body["response_format"] = %*{ "type": "json_object" }
+    else:
+      body["response_format"] = %*{
+        "type": "json_schema",
+        "json_schema": {
+          "strict": true,
+          "schema": parseJson(jsonSchema),
+        }
       }
-    }
 
   let client = newHttpClient(timeout = 120000)
   client.headers = newHttpHeaders([("Content-Type", "application/json")])

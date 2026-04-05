@@ -246,7 +246,8 @@ proc runClusterPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
   let rootIds = rootFolders.mapIt(it.id)
 
   let prompt = buildClusterPrompt(batchTuples, taxCats, rootFolders)
-  let schema = buildClusterSchemaJson(rootIds)
+  let schema = if cfg.isSmallModel(): buildClusterSchemaJsonSmall()
+               else: buildClusterSchemaJson(rootIds)
 
   let response = chatCompletionSimple(cfg, SystemPrompt, prompt, schema)
 
@@ -302,7 +303,8 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
     let pruned = pruneTaxonomy(fullTaxonomy, batch, tfidfMap)
     let folderIds = pruned.categories.mapIt(it.folderId)
     let bookmarkIds = batch.mapIt($it.id)
-    let schema = buildClassificationSchemaJson(folderIds, bookmarkIds)
+    let schema = if cfg.isSmallModel(): buildClassificationSchemaJsonSmall()
+                 else: buildClassificationSchemaJson(folderIds, bookmarkIds)
 
     let taxCats = pruned.categories.mapIt(
       (id: it.folderId, path: it.folderPath, description: it.description, keywords: it.keywords.join(", "))

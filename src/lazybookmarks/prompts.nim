@@ -1,6 +1,6 @@
 import std/strutils
 
-const SystemPrompt* = "You are a bookmark classifier. Given a user's folder structure and uncategorized bookmarks, assign each to the most appropriate existing folder. If no folder fits well, set targetFolderId to \"__skip__\" instead of forcing a poor match. Respond with valid JSON matching the provided schema. Prefer the user's existing folder names. Only suggest new folders when necessary."
+const SystemPrompt* = "You are a bookmark classifier. Given a user's folder structure and uncategorized bookmarks, assign each to the most appropriate existing folder. If no folder fits well, set targetFolderId to \"__skip__\" instead of forcing a poor match. Respond with ONLY valid JSON matching the required structure. No explanation, no markdown, no other text. Prefer the user's existing folder names. Only suggest new folders when necessary."
 
 const TaxonomySchemaJson* = """{
   "type": "object",
@@ -42,6 +42,12 @@ proc buildClassificationSchemaJson*(folderIds: seq[string], bookmarkIds: seq[str
   let bookmarkEnum = bookmarkParts.join(", ")
   return "{\"type\":\"object\",\"properties\":{\"moves\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"bookmarkId\":{\"type\":\"string\",\"enum\":[" & bookmarkEnum & "]},\"targetFolderId\":{\"type\":\"string\",\"enum\":[" & folderEnum & "]},\"confidence\":{\"type\":\"string\",\"enum\":[\"high\",\"medium\",\"low\"]},\"reason\":{\"type\":\"string\"}},\"required\":[\"bookmarkId\",\"targetFolderId\",\"confidence\",\"reason\"],\"additionalProperties\":false}}},\"required\":[\"moves\"]}"
 
+proc buildClassificationSchemaJsonSmall*(): string =
+  return "{\"type\":\"object\",\"properties\":{\"moves\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"bookmarkId\":{\"type\":\"string\"},\"targetFolderId\":{\"type\":\"string\"},\"confidence\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"bookmarkId\",\"targetFolderId\",\"confidence\",\"reason\"]}}},\"required\":[\"moves\"]}"
+
+proc buildClusterSchemaJsonSmall*(): string =
+  return "{\"type\":\"object\",\"properties\":{\"clusters\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"},\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"parentFolderId\":{\"type\":\"string\"}},\"required\":[\"name\",\"description\",\"keywords\",\"parentFolderId\"]}}},\"required\":[\"clusters\"]}"
+
 proc buildTaxonomyPrompt*(enrichedFolders: seq[tuple[id, path, count: string, domains, siblings, keywords, exemplars: string]]): string =
   var lines: seq[string] = @[]
   for f in enrichedFolders:
@@ -52,7 +58,10 @@ proc buildTaxonomyPrompt*(enrichedFolders: seq[tuple[id, path, count: string, do
     if f.keywords.len > 0: parts.add("keywords: " & f.keywords)
     if f.exemplars.len > 0: parts.add("examples: " & f.exemplars)
     lines.add(parts.join(" | "))
-  return "Analyze these bookmark folders. For each, describe what it contains and provide keywords.\n\n" & lines.join("\n")
+  return "Analyze these bookmark folders. For each, describe what it contains and provide keywords.\n\n" &
+    lines.join("\n") & "\n\n" &
+    "Respond with a JSON object: {\"categories\": [{\"folderId\": \"<id>\", \"folderPath\": \"<path>\", \"description\": \"<what it contains>\", \"keywords\": [\"word1\", \"word2\"]}]}\n\n" &
+    "Example:\n{\"categories\": [{\"folderId\": \"a1b2c3\", \"folderPath\": \"Tech/Blogs\", \"description\": \"Programming and software development blogs\", \"keywords\": [\"programming\", \"software\", \"code\"]}]}"
 
 proc formatBookmarkBatch*(bookmarks: seq[tuple[id, title, url: string]]): string =
   var lines: seq[string] = @[]
@@ -96,7 +105,8 @@ proc buildClusterPrompt*(uncategorizedBookmarks: seq[tuple[id, title, url: strin
     "Uncategorized bookmarks:\n" &
     bookmarkList & "\n\n" &
     "For each cluster, suggest a short folder name, a description, keywords, and which root location to create it in (parentFolderId).\n" &
-    "Only suggest clusters when a meaningful group of 2+ bookmarks shares a clear theme. Do not suggest clusters that duplicate an existing folder's purpose."
+    "Only suggest clusters when a meaningful group of 2+ bookmarks shares a clear theme. Do not suggest clusters that duplicate an existing folder's purpose.\n\n" &
+    "Respond with a JSON object: {\"clusters\": [{\"name\": \"<folder name>\", \"description\": \"<what it contains>\", \"keywords\": [\"word1\", \"word2\"], \"parentFolderId\": \"<root folder id>\"}]}"
 
 proc buildClassificationPrompt*(taxonomyCategories: seq[tuple[id, path, description, keywords: string]],
                                 bookmarkBatch: seq[tuple[id, title, url: string]]): string =
@@ -115,4 +125,5 @@ proc buildClassificationPrompt*(taxonomyCategories: seq[tuple[id, path, descript
     "- Choose the best existing folder (targetFolderId)\n" &
     "- Set confidence: \"high\" (obvious match), \"medium\" (reasonable), \"low\" (uncertain)\n" &
     "- Give a brief reason\n\n" &
-    "Use targetFolderId=\"__skip__\" if no folder is a good match."
+    "Use targetFolderId=\"__skip__\" if no folder is a good match.\n\n" &
+    "Respond with a JSON object: {\"moves\": [{\"bookmarkId\": \"<id>\", \"targetFolderId\": \"<folder id or __skip__>\", \"confidence\": \"high|medium|low\", \"reason\": \"<brief reason>\"}]}"
