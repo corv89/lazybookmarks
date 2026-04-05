@@ -11,7 +11,7 @@ type Config* = object
   verbose*:        bool
 
 const DefaultLlmUrl* = "http://127.0.0.1:11434/v1"
-const DefaultModelVariant* = "qwen3.5-0.8b"
+const DefaultModelVariant* = "qwen3.5-2b"
 const DefaultBatchSize* = 1
 
 proc xdgDataHome*: string =

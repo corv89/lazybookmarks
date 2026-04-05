@@ -53,7 +53,9 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
 
   let url = cfg.llmUrl & "/chat/completions"
   if cfg.verbose:
-    stderr.writeLine("[chat] POST " & url)
+    stderr.writeLine("[chat] POST " & url & " model=" & cfg.modelName)
+    for m in messages:
+      stderr.writeLine("[chat]   " & m.role & ": " & m.content[0..min(300, m.content.high)])
 
   var lastError = ""
   for attempt in 1..maxRetries:
