@@ -6,7 +6,6 @@ description   = "CLI bookmark organizer powered by local LLM"
 license       = "MIT"
 srcDir        = "src"
 bin           = @["lazybookmarks/main"]
-installDirs   = @["lazybookmarks"]
 
 # Dependencies
 

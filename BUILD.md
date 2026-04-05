@@ -25,20 +25,10 @@ sudo pacman -S nim
 yay -S ollama-cuda  # or ollama-rocm for AMD
 ```
 
-## Install Nim dependencies
-
-```sh
-nimble install cligen db_connector jsony
-```
-
 ## Build
 
 ```sh
-# Release (optimised, smaller binary)
 nimble release
-
-# Debug
-nimble debug
 ```
 
 The binary will be at `build/lazybookmarks`.
