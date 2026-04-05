@@ -1,3 +1,5 @@
 *.gguf
 /*.html
 /build/
+/dist/
+/lazybookmarks/
