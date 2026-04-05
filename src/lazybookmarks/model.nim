@@ -72,7 +72,6 @@ proc ensureModel*(cfg: Config, registry: ModelRegistry) =
 
 proc listModels*(cfg: Config, registry: ModelRegistry) =
   echo ""
-  let localModels = listLocalModels()
   for entry in registry.entries:
     let isCurrent = entry.name == cfg.modelVariant
     let isReady = isEntryReady(entry)

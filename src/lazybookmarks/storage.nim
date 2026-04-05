@@ -267,7 +267,6 @@ proc applyClassification*(cfg: Config, bookmarkId: int64, category: string, conf
   defer: db.close()
 
   let now = getTime().toUnix()
-  let folder = db.getOrCreateFolder(category)
   db.exec(sql(
     "UPDATE bookmarks SET category = ?, confidence = ?, reason = ?, organised_at = ? WHERE id = ?"
   ), category, confidence, reason, now, bookmarkId)
@@ -276,15 +275,10 @@ proc undoLastBatch*(cfg: Config): int =
   let db = cfg.initDb()
   defer: db.close()
 
-  let now = getTime().toUnix()
-  result = db.execAffectedRows(sql(
-    "UPDATE bookmarks SET category = NULL, confidence = NULL, reason = NULL, organised_at = NULL"
-  ),)
-  # Actually undo: find the last batch by organised_at
   let row = db.getRow(sql(
     "SELECT organised_at FROM bookmarks WHERE organised_at IS NOT NULL ORDER BY organised_at DESC LIMIT 1"
   ))
-  if row[0].len > 0:
+  if row.len > 0 and row[0].len > 0:
     let batchTime = parseBiggestInt(row[0])
     result = db.execAffectedRows(sql(
       "UPDATE bookmarks SET category = NULL, confidence = NULL, reason = NULL, organised_at = NULL WHERE organised_at >= ?"
