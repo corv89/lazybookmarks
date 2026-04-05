@@ -126,7 +126,7 @@ proc importNetscapeHtml*(content: string): seq[tuple[url, title, folder: string]
     if "<DT>" in trimmed:
       if "<A " in trimmed and "HREF=" in trimmed:
         var matches: array[1, string]
-        if trimmed.match(re"""HREF="([^"]*)""", matches):
+        if trimmed.find(re"""HREF="([^"]*)""", matches) >= 0:
           let url = matches[0]
           let titleStart = trimmed.find(">")
           let titleEnd = trimmed.find("</A>")
@@ -137,7 +137,7 @@ proc importNetscapeHtml*(content: string): seq[tuple[url, title, folder: string]
           result.add((url, title, folderStack.join(" / ")))
       elif "<H3" in trimmed and "</H3>" in trimmed:
         var matches: array[1, string]
-        if trimmed.match(re"""<H3[^>]*>(.*?)</H3>""", matches):
+        if trimmed.find(re"""<H3[^>]*>(.*?)</H3>""", matches) >= 0:
           var folderName = matches[0].replace(re"<[^>]+>", "")
           folderStack.add(folderName)
     if "</DL>" in trimmed and folderStack.len > 1:
