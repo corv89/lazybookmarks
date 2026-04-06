@@ -461,3 +461,53 @@ proc undoLastBatch*(cfg: Config): int =
     result = db.execAffectedRows(sql(
       "UPDATE bookmarks SET category = NULL, confidence = NULL, reason = NULL, organised_at = NULL WHERE organised_at >= ?"
     ), batchTime)
+
+proc htmlEscape*(s: string): string =
+  result = s
+  result = result.replace("&", "&amp;")
+  result = result.replace("<", "&lt;")
+  result = result.replace(">", "&gt;")
+  result = result.replace("\"", "&quot;")
+
+proc getBookmarksForExport*(cfg: Config, categoryFilter = ""): seq[tuple[url, title, category: string]] =
+  let db = cfg.initDb()
+  defer: db.close()
+
+  let query = if categoryFilter.len > 0:
+    sql("SELECT url, title, category FROM bookmarks WHERE category = ? ORDER BY category, title")
+  else:
+    sql("SELECT url, title, category FROM bookmarks ORDER BY category, title")
+
+  for row in db.fastRows(query, categoryFilter):
+    result.add((
+      url: row[0],
+      title: row[1],
+      category: if row[2].len > 0: row[2] else: "Unorganized",
+    ))
+
+proc exportBookmarksHtml*(cfg: Config, categoryFilter = ""): string =
+  let bookmarks = getBookmarksForExport(cfg, categoryFilter)
+  if bookmarks.len == 0:
+    return ""
+
+  var lines: seq[string] = @[]
+  lines.add("""<!DOCTYPE NETSCAPE-Bookmark-file-1>""")
+  lines.add("""<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">""")
+  lines.add("<TITLE>Bookmarks</TITLE>")
+  lines.add("<H1>Bookmarks</H1>")
+  lines.add("<DL><p>")
+
+  var currentCat = ""
+  for bm in bookmarks:
+    if bm.category != currentCat:
+      if currentCat.len > 0:
+        lines.add("</DL><p>")
+      currentCat = bm.category
+      lines.add("<DT><H3>" & htmlEscape(currentCat) & "</H3>")
+      lines.add("<DL><p>")
+    let title = if bm.title.len > 0: bm.title else: bm.url
+    lines.add("<DT><A HREF=\"" & htmlEscape(bm.url) & "\">" & htmlEscape(title) & "</A>")
+
+  lines.add("</DL><p>")
+  lines.add("</DL><p>")
+  return lines.join("\n")

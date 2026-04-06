@@ -277,6 +277,18 @@ proc cmdCheckLinks(concurrency = 8, deadOnly = false, deleteDead = false,
       let removed = cfg.deleteBookmarks(deadIds)
       infoMsg &"Deleted {removed} dead bookmark(s)"
 
+proc cmdExport(output = "", category = "") =
+  let cfg = loadConfig()
+  let html = exportBookmarksHtml(cfg, category)
+  if html.len == 0:
+    dimMsg "No bookmarks to export."
+    return
+  if output.len > 0:
+    writeFile(output, html)
+    infoMsg &"Exported {getBookmarksForExport(cfg, category).len} bookmarks to {output}"
+  else:
+    stdout.write(html)
+
 when isMainModule:
   dispatchMulti(
     [cmdImport, cmdName = "import", doc = "Import bookmarks from a file",
@@ -290,6 +302,8 @@ when isMainModule:
       help = {"category": "Filter by folder path", "unorganised": "Show only unorganized"}],
     [cmdSearch, cmdName = "search", doc = "Search bookmarks",
       help = {"query": "Search term"}],
+    [cmdExport, cmdName = "export", doc = "Export bookmarks to Netscape HTML",
+      help = {"output": "Write to file instead of stdout", "category": "Filter by category"}],
     [cmdUndo, cmdName = "undo", doc = "Undo last batch of classifications"],
     [cmdModelList, cmdName = "model-list", doc = "List available models"],
     [cmdModelSet, cmdName = "model-set", doc = "Set default model variant",
