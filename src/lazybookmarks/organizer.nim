@@ -369,21 +369,18 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
         inc i
     return drained
 
-  while batchIdx < batches.len:
+  while batchIdx < batches.len or pending.len > 0:
     while pending.len < conc and batchIdx < batches.len:
       pending.add(classifyBatchAsync(cfg, batches[batchIdx], fullTaxonomy, tfidfMap, batchIdx))
       inc batchIdx
 
-    while not pending[0].finished:
-      if drainPending() > 0 and pending.len == 0: break
-
-    discard drainPending()
-
-  while pending.len > 0:
-    if not pending[0].finished:
+    while pending.len > 0:
       poll()
-    else:
       discard drainPending()
+      if pending.len > 0 and not pending[0].finished:
+        poll()
+      else:
+        break
 
   echo ""
   return allSuggestions
