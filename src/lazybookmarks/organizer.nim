@@ -140,6 +140,34 @@ proc saveTaxonomy*(db: DbConn, fingerprint: string, taxonomy: Taxonomy) =
   except:
     discard
 
+proc loadCachedClusters*(db: DbConn, fingerprint: string): (bool, seq[ClusterSuggestion]) =
+  try:
+    let row = db.getRow(sql("SELECT clusters FROM cluster_cache WHERE fingerprint = ?"), fingerprint)
+    if row[0].len == 0:
+      return (false, @[])
+    let json = parseJson(row[0])
+    var clusters: seq[ClusterSuggestion] = @[]
+    for elem in json.getElems():
+      var kws: seq[string] = @[]
+      for kw in elem["keywords"].getElems():
+        kws.add(kw.getStr())
+      clusters.add(ClusterSuggestion(
+        name: elem["name"].getStr(),
+        description: elem["description"].getStr(),
+        keywords: kws,
+        parentFolderId: elem["parentFolderId"].getStr(),
+      ))
+    return (true, clusters)
+  except:
+    return (false, @[])
+
+proc saveClusters*(db: DbConn, fingerprint: string, clusters: seq[ClusterSuggestion]) =
+  try:
+    db.exec(sql("INSERT OR REPLACE INTO cluster_cache (fingerprint, clusters, created_at) VALUES (?, ?, strftime('%s','now'))"),
+      fingerprint, $(%*clusters))
+  except:
+    discard
+
 proc pruneTaxonomy*(taxonomy: Taxonomy, batch: seq[BookmarkEntry],
                     tfidfMap: Table[string, seq[string]],
                     topN = 15, minN = 5): Taxonomy =
@@ -321,7 +349,8 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
                              taxonomy: Taxonomy,
                              folderBookmarks: Table[string, seq[BookmarkEntry]],
                              allBookmarks: seq[BookmarkEntry],
-                             clusters: seq[ClusterSuggestion]): seq[Suggestion] =
+                             clusters: seq[ClusterSuggestion],
+                             autoApply: bool = false): (int, seq[Suggestion]) =
   var fullTaxonomy = taxonomy
 
   let newFolders = clusters.mapIt(TaxonomyCategory(
@@ -338,18 +367,27 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
   let conc = cfg.concurrency
 
   if batches.len == 0:
-    return @[]
+    return (0, @[])
 
   var completedCount = 0
+  var appliedCount = 0
   var allSuggestions: seq[Suggestion] = @[]
+
+  proc commitBatch(suggestions: seq[Suggestion]) =
+    for s in suggestions:
+      if s.confidence != "low":
+        applyClassification(cfg, s.bookmarkId, s.targetFolderPath, s.confidence, s.reason)
+        inc appliedCount
 
   if conc <= 1:
     for i, batch in batches:
       showProgressBar(i + 1, batches.len, "Classifying bookmarks")
       let suggestions = classifyBatchAsync(cfg, batch, fullTaxonomy, tfidfMap, i).waitFor()
       allSuggestions.add(suggestions)
+      if autoApply:
+        commitBatch(suggestions)
     echo ""
-    return allSuggestions
+    return (appliedCount, allSuggestions)
 
   var pending: seq[Future[seq[Suggestion]]] = @[]
   var batchIdx = 0
@@ -364,6 +402,8 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
         inc completedCount
         showProgressBar(completedCount, batches.len, "Classifying bookmarks")
         allSuggestions.add(batchResult)
+        if autoApply:
+          commitBatch(batchResult)
         inc drained
       else:
         inc i
@@ -383,7 +423,7 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
         break
 
   echo ""
-  return allSuggestions
+  return (appliedCount, allSuggestions)
 
 proc organizeBookmarks*(cfg: Config, autoAcceptAll: bool = false, limit: int = 0): int =
   let db = cfg.initDb()
@@ -423,30 +463,35 @@ proc organizeBookmarks*(cfg: Config, autoAcceptAll: bool = false, limit: int = 0
   let taxonomy = runTaxonomyPhase(cfg, folders, folderBookmarks, allBookmarks, db)
 
   headerMsg "Phase 1.5: Identifying new folder opportunities..."
+  let fingerprint = buildFingerprint(folders)
   var clusters: seq[ClusterSuggestion] = @[]
-  try:
-    clusters = runClusterPhase(cfg, webUncategorized, taxonomy, folders)
+  let (clusterCached, cachedClusters) = loadCachedClusters(db, fingerprint)
+  if clusterCached:
+    clusters = cachedClusters
     if clusters.len > 0 and cfg.verbose:
-      dimMsg &"Found {clusters.len} potential new folders"
-  except CatchableError as e:
-    if cfg.verbose:
-      warnMsg &"Cluster phase skipped: {e.msg}"
+      dimMsg &"Cluster cache hit ({clusters.len} folders)"
+  else:
+    try:
+      clusters = runClusterPhase(cfg, webUncategorized, taxonomy, folders)
+      if clusters.len > 0:
+        saveClusters(db, fingerprint, clusters)
+        if cfg.verbose:
+          dimMsg &"Found {clusters.len} potential new folders"
+    except CatchableError as e:
+      if cfg.verbose:
+        warnMsg &"Cluster phase skipped: {e.msg}"
 
   headerMsg "Phase 2: Classifying bookmarks..."
-  let suggestions = runClassificationPhase(cfg, webUncategorized, taxonomy, folderBookmarks, allBookmarks, clusters)
+  let shouldAutoApply = autoAcceptAll or cfg.autoAcceptHigh
+  let (appliedCount, suggestions) = runClassificationPhase(cfg, webUncategorized, taxonomy, folderBookmarks, allBookmarks, clusters, autoApply = shouldAutoApply)
 
   if suggestions.len == 0:
     dimMsg "No suggestions generated."
     return 0
 
-  if autoAcceptAll or cfg.autoAcceptHigh:
-    var accepted = 0
-    for s in suggestions:
-      if autoAcceptAll or s.confidence == "high":
-        applyClassification(cfg, s.bookmarkId, s.targetFolderPath, s.confidence, s.reason)
-        accepted.inc
-    infoMsg &"Applied {accepted} suggestions automatically"
-    return accepted
+  if shouldAutoApply:
+    infoMsg &"Applied {appliedCount} suggestions automatically"
+    return appliedCount
 
   var accepted = 0
   var skipped = 0

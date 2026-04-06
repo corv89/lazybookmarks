@@ -52,6 +52,12 @@ CREATE TABLE IF NOT EXISTS taxonomy_cache (
   created_at    INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS cluster_cache (
+  fingerprint   TEXT PRIMARY KEY,
+  clusters      TEXT NOT NULL,
+  created_at    INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS folders (
   id            INTEGER PRIMARY KEY,
   uuid          TEXT    NOT NULL UNIQUE,
