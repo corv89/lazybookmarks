@@ -55,9 +55,39 @@ proc defaultConfigDir*: string =
 proc ensureDir*(dir: string) =
   createDir(dir)
 
+proc readTomlString(content: string, key: string): string =
+  for line in content.splitLines():
+    let stripped = line.strip()
+    if stripped.startsWith(key & " = "):
+      var val = stripped[key.len + 3 .. stripped.high].strip()
+      if val.startsWith("\"") and val.endsWith("\""):
+        val = val[1 ..< val.high]
+      return val
+  return ""
+
+proc readTomlInt(content: string, key: string): int =
+  let val = readTomlString(content, key)
+  if val.len > 0:
+    try: return parseInt(val)
+    except: discard
+  return 0
+
+proc readTomlBool(content: string, key: string): bool =
+  let val = readTomlString(content, key)
+  return val == "true"
+
 proc loadConfig*(overrides: Config = Config()): Config =
+  let configPath = defaultConfigDir() / "config.toml"
+  var fileModel = ""
+  var fileAutoAccept = false
+  if fileExists(configPath):
+    let content = readFile(configPath)
+    fileModel = readTomlString(content, "modelVariant")
+    fileAutoAccept = readTomlBool(content, "autoAcceptHigh")
+
   let variant = if overrides.modelVariant.len > 0: overrides.modelVariant
                 elif getEnv("LB_MODEL").len > 0: getEnv("LB_MODEL")
+                elif fileModel.len > 0: fileModel
                 else: DefaultModelVariant
   let ps = parseParamSize(variant)
   let defaultBatch = if ps == psSmall: 5 else: 10
@@ -66,7 +96,7 @@ proc loadConfig*(overrides: Config = Config()): Config =
     modelVariant:   variant,
     dataDir:        defaultDataDir(),
     runtimeManaged: true,
-    autoAcceptHigh: false,
+    autoAcceptHigh: fileAutoAccept,
     batchSize:      defaultBatch,
     concurrency:    DefaultConcurrency,
     verbose:        false,

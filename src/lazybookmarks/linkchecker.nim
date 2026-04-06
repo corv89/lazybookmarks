@@ -1,4 +1,4 @@
-import std/[osproc, strutils, sequtils, os, tables]
+import std/[strutils, os, tables]
 import ./config
 import ./storage
 
