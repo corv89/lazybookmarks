@@ -68,19 +68,30 @@ proc extractJson*(s: string): string =
   return cleaned[start .. endPos]
 
 proc buildRequestBody(cfg: Config, messages: seq[Message], jsonSchema: string): JsonNode =
-  result = %*{
-    "model": cfg.modelName,
-    "messages": messages,
-    "temperature": 0.1,
-    "max_tokens": 2048,
-    "options": {
-      "think": false,
-    },
-  }
-  if jsonSchema.len > 0:
-    if cfg.isSmallModel():
-      result["response_format"] = %*{ "type": "json_object" }
-    else:
+  let native = cfg.runtimeManaged
+  if native:
+    result = %*{
+      "model": cfg.modelName,
+      "messages": messages,
+      "stream": false,
+      "temperature": 0.1,
+      "options": {
+        "think": false,
+      },
+    }
+    if jsonSchema.len > 0:
+      result["format"] = parseJson(jsonSchema)
+  else:
+    result = %*{
+      "model": cfg.modelName,
+      "messages": messages,
+      "temperature": 0.1,
+      "max_tokens": 2048,
+      "options": {
+        "think": false,
+      },
+    }
+    if jsonSchema.len > 0:
       result["response_format"] = %*{
         "type": "json_schema",
         "json_schema": {
@@ -89,16 +100,29 @@ proc buildRequestBody(cfg: Config, messages: seq[Message], jsonSchema: string): 
         }
       }
 
+proc chatUrl(cfg: Config): string =
+  if cfg.runtimeManaged:
+    cfg.ollamaApiUrl() & "/api/chat"
+  else:
+    cfg.llmUrl & "/chat/completions"
+
+proc extractContent(parsed: JsonNode, native: bool): string =
+  if native:
+    parsed["message"]["content"].getStr()
+  else:
+    parsed["choices"][0]["message"]["content"].getStr()
+
 proc chatCompletion*(cfg: Config, messages: seq[Message],
                     jsonSchema: string = "",
                     maxRetries: int = 3): JsonNode =
   let body = buildRequestBody(cfg, messages, jsonSchema)
+  let native = cfg.runtimeManaged
 
   let client = newHttpClient(timeout = 120000)
   client.headers = newHttpHeaders([("Content-Type", "application/json")])
   defer: client.close()
 
-  let url = cfg.llmUrl & "/chat/completions"
+  let url = chatUrl(cfg)
   if cfg.verbose:
     stderr.writeLine("[chat] POST " & url & " model=" & cfg.modelName)
     for m in messages:
@@ -113,17 +137,23 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
         stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
 
       let parsed = parseJson(response)
-      if parsed.hasKey("choices") and parsed["choices"].len > 0:
-        let rawContent = parsed["choices"][0]["message"]["content"].getStr()
-        let content = extractJson(rawContent)
-        if content.len > 0:
-          if cfg.verbose:
-            stderr.writeLine("[chat] response: " & content[0..min(200, content.high)])
-          return parseJson(content)
-        else:
-          lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
+      var rawContent = ""
+      try:
+        rawContent = extractContent(parsed, native)
+      except CatchableError:
+        lastError = "Unexpected response format: " & response[0..min(200, response.high)]
+        if attempt < maxRetries:
+          let delay = 1000 * (1 shl (attempt - 1))
+          discard execShellCmd("sleep " & $(delay div 1000))
+        continue
+
+      let content = extractJson(rawContent)
+      if content.len > 0:
+        if cfg.verbose:
+          stderr.writeLine("[chat] response: " & content[0..min(200, content.high)])
+        return parseJson(content)
       else:
-        lastError = "No choices in response: " & response[0..min(200, response.high)]
+        lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
     except CatchableError as e:
       lastError = e.msg
       if cfg.verbose:
@@ -146,7 +176,8 @@ proc chatCompletionAsync*(cfg: Config, messages: seq[Message],
                           jsonSchema: string = "",
                           maxRetries: int = 3): Future[JsonNode] {.async.} =
   let body = buildRequestBody(cfg, messages, jsonSchema)
-  let url = cfg.llmUrl & "/chat/completions"
+  let native = cfg.runtimeManaged
+  let url = chatUrl(cfg)
 
   if cfg.verbose:
     stderr.writeLine("[chat-async] POST " & url & " model=" & cfg.modelName)
@@ -172,17 +203,23 @@ proc chatCompletionAsync*(cfg: Config, messages: seq[Message],
           stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
 
         let parsed = parseJson(response)
-        if parsed.hasKey("choices") and parsed["choices"].len > 0:
-          let rawContent = parsed["choices"][0]["message"]["content"].getStr()
-          let content = extractJson(rawContent)
-          if content.len > 0:
-            if cfg.verbose:
-              stderr.writeLine("[chat-async] response: " & content[0..min(200, content.high)])
-            return parseJson(content)
-          else:
-            lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
+        var rawContent = ""
+        try:
+          rawContent = extractContent(parsed, native)
+        except CatchableError:
+          lastError = "Unexpected response format: " & response[0..min(200, response.high)]
+          if attempt < maxRetries:
+            let delay = 1000 * (1 shl (attempt - 1))
+            await sleepAsync(delay)
+          continue
+
+        let content = extractJson(rawContent)
+        if content.len > 0:
+          if cfg.verbose:
+            stderr.writeLine("[chat-async] response: " & content[0..min(200, content.high)])
+          return parseJson(content)
         else:
-          lastError = "No choices in response: " & response[0..min(200, response.high)]
+          lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
     except CatchableError as e:
       lastError = e.msg
       if cfg.verbose:

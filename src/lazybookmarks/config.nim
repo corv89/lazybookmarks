@@ -26,13 +26,15 @@ proc parseParamSize*(variant: string): ParamSize =
 proc isSmallModel*(cfg: Config): bool =
   cfg.paramSize == psSmall
 
-const DefaultLlmUrl* = "http://127.0.0.1:11434/v1"
+const DefaultLlmUrl* = "http://127.0.0.1:11434"
 const DefaultModelVariant* = "qwen3.5-2b"
 const DefaultConcurrency* = 4
 
 proc ollamaApiUrl*(cfg: Config): string =
   if cfg.llmUrl.endsWith("/v1"):
     cfg.llmUrl[0 ..< cfg.llmUrl.len - 3]
+  elif cfg.llmUrl.endsWith("/"):
+    cfg.llmUrl[0 ..< cfg.llmUrl.len - 1]
   else:
     cfg.llmUrl
 
@@ -64,13 +66,6 @@ proc readTomlString(content: string, key: string): string =
         val = val[1 ..< val.high]
       return val
   return ""
-
-proc readTomlInt(content: string, key: string): int =
-  let val = readTomlString(content, key)
-  if val.len > 0:
-    try: return parseInt(val)
-    except: discard
-  return 0
 
 proc readTomlBool(content: string, key: string): bool =
   let val = readTomlString(content, key)
