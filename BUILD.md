@@ -4,24 +4,25 @@
 
 - **Nim** >= 2.0.0 — https://nim-lang.org/install.html
 - **Ollama** — https://ollama.com/download (runtime dependency, not build-time)
+- **curl** — required at runtime for `check-links` (link health checking)
 
 ### macOS
 
 ```sh
-brew install nim ollama
+brew install nim ollama curl
 ```
 
 ### Ubuntu/Debian
 
 ```sh
-sudo apt install nim
+sudo apt install nim curl
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
 ### Arch Linux
 
 ```sh
-sudo pacman -S nim
+sudo pacman -S nim curl
 yay -S ollama-cuda  # or ollama-rocm for AMD
 ```
 
