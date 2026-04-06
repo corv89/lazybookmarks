@@ -43,12 +43,6 @@ proc buildClassificationSchemaJson*(folderIds: seq[string], bookmarkIds: seq[str
   let bookmarkEnum = bookmarkParts.join(", ")
   return "{\"type\":\"object\",\"properties\":{\"moves\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"bookmarkId\":{\"type\":\"string\",\"enum\":[" & bookmarkEnum & "]},\"targetFolderId\":{\"type\":\"string\",\"enum\":[" & folderEnum & "]},\"confidence\":{\"type\":\"string\",\"enum\":[\"high\",\"medium\",\"low\"]},\"reason\":{\"type\":\"string\"}},\"required\":[\"bookmarkId\",\"targetFolderId\",\"confidence\",\"reason\"],\"additionalProperties\":false}}},\"required\":[\"moves\"]}"
 
-proc buildClassificationSchemaJsonSmall*(): string =
-  return "{\"type\":\"object\",\"properties\":{\"moves\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"bookmarkId\":{\"type\":\"string\"},\"targetFolderId\":{\"type\":\"string\"},\"confidence\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"bookmarkId\",\"targetFolderId\",\"confidence\",\"reason\"]}}},\"required\":[\"moves\"]}"
-
-proc buildClusterSchemaJsonSmall*(): string =
-  return "{\"type\":\"object\",\"properties\":{\"clusters\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"},\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"parentFolderId\":{\"type\":\"string\"}},\"required\":[\"name\",\"description\",\"keywords\",\"parentFolderId\"]}}},\"required\":[\"clusters\"]}"
-
 proc buildTaxonomyPrompt*(enrichedFolders: seq[tuple[id, path, count: string, domains, keywords, exemplars: string]]): string =
   var lines: seq[string] = @[]
   for f in enrichedFolders:

@@ -112,6 +112,17 @@ proc extractContent(parsed: JsonNode, native: bool): string =
   else:
     parsed["choices"][0]["message"]["content"].getStr()
 
+proc parseChatResponse(response: string, native: bool, verbose: bool, prefix: string): JsonNode =
+  let parsed = parseJson(response)
+  let rawContent = extractContent(parsed, native)
+  let content = extractJson(rawContent)
+  if content.len > 0:
+    if verbose:
+      stderr.writeLine("[" & prefix & "] response: " & content[0..min(200, content.high)])
+    return parseJson(content)
+  else:
+    raise newException(CatchableError, "No JSON found in response: " & rawContent[0..min(200, rawContent.high)])
+
 proc chatCompletion*(cfg: Config, messages: seq[Message],
                     jsonSchema: string = "",
                     maxRetries: int = 3): JsonNode =
@@ -136,24 +147,7 @@ proc chatCompletion*(cfg: Config, messages: seq[Message],
       if cfg.verbose:
         stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
 
-      let parsed = parseJson(response)
-      var rawContent = ""
-      try:
-        rawContent = extractContent(parsed, native)
-      except CatchableError:
-        lastError = "Unexpected response format: " & response[0..min(200, response.high)]
-        if attempt < maxRetries:
-          let delay = 1000 * (1 shl (attempt - 1))
-          discard execShellCmd("sleep " & $(delay div 1000))
-        continue
-
-      let content = extractJson(rawContent)
-      if content.len > 0:
-        if cfg.verbose:
-          stderr.writeLine("[chat] response: " & content[0..min(200, content.high)])
-        return parseJson(content)
-      else:
-        lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
+      return parseChatResponse(response, native, cfg.verbose, "chat")
     except CatchableError as e:
       lastError = e.msg
       if cfg.verbose:
@@ -193,33 +187,14 @@ proc chatCompletionAsync*(cfg: Config, messages: seq[Message],
       client.close()
 
       if timedOut:
-        lastError = "Request timed out (120s)"
-        if cfg.verbose:
-          stderr.writeLine("[attempt " & $attempt & "] Timeout")
-      else:
-        let response = postFut.read()
+        raise newException(CatchableError, "Request timed out (120s)")
 
-        if cfg.verbose:
-          stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
+      let response = postFut.read()
 
-        let parsed = parseJson(response)
-        var rawContent = ""
-        try:
-          rawContent = extractContent(parsed, native)
-        except CatchableError:
-          lastError = "Unexpected response format: " & response[0..min(200, response.high)]
-          if attempt < maxRetries:
-            let delay = 1000 * (1 shl (attempt - 1))
-            await sleepAsync(delay)
-          continue
+      if cfg.verbose:
+        stderr.writeLine("[attempt " & $attempt & "] -> " & $response.len & " bytes")
 
-        let content = extractJson(rawContent)
-        if content.len > 0:
-          if cfg.verbose:
-            stderr.writeLine("[chat-async] response: " & content[0..min(200, content.high)])
-          return parseJson(content)
-        else:
-          lastError = "No JSON found in response: " & rawContent[0..min(200, rawContent.high)]
+      return parseChatResponse(response, native, cfg.verbose, "chat-async")
     except CatchableError as e:
       lastError = e.msg
       if cfg.verbose:
