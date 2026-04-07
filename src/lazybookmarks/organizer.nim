@@ -1,10 +1,11 @@
-import std/[strutils, strformat, json, re, math, tables, algorithm, sequtils, sets, asyncdispatch]
+import std/[strutils, strformat, json, re, math, tables, algorithm, sequtils, sets, asyncdispatch, os, times]
 import db_connector/db_sqlite
 import ./config
 import ./storage
 import ./client
 import ./prompts
 import ./ui
+import ./runtime
 
 type
   TaxonomyCategory* = object
@@ -37,6 +38,11 @@ type
     confidence*:     string
     reason*:         string
     isNewFolder*:    bool
+
+  BatchResult* = object
+    suggestions*: seq[Suggestion]
+    skipped*:   int
+    lowConf*:   int
 
 const StopWords = ["the","a","an","and","or","of","to","in","for","is","on","with","at","by","from","this","that","it","as","are","was","be","has","have"]
 
@@ -289,7 +295,7 @@ proc chunk*[T](s: seq[T], size: int): seq[seq[T]] =
 proc classifyBatchAsync(cfg: Config, batch: seq[BookmarkEntry],
                         fullTaxonomy: Taxonomy,
                         tfidfMap: Table[string, seq[string]],
-                        batchIndex: int): Future[seq[Suggestion]] {.async.} =
+                        batchIndex: int): Future[BatchResult] {.async.} =
   let pruned = pruneTaxonomy(fullTaxonomy, batch, tfidfMap)
   let folderIds = pruned.categories.mapIt(it.folderId)
   let bookmarkIds = batch.mapIt($it.id)
@@ -304,6 +310,8 @@ proc classifyBatchAsync(cfg: Config, batch: seq[BookmarkEntry],
   try:
     let response = await chatCompletionSimpleAsync(cfg, SystemPrompt, prompt, schema)
     var suggestions: seq[Suggestion] = @[]
+    var skipCount = 0
+    var lowCount = 0
 
     if response.hasKey("moves"):
       for move in response["moves"]:
@@ -314,7 +322,11 @@ proc classifyBatchAsync(cfg: Config, batch: seq[BookmarkEntry],
         let reason = moveObj["reason"].getStr()
 
         if targetId == "__skip__":
+          inc skipCount
           continue
+
+        if conf == "low":
+          inc lowCount
 
         let bmIdx = batch.findIt(it.id == bmId)
         var bmTitle = ""
@@ -339,11 +351,13 @@ proc classifyBatchAsync(cfg: Config, batch: seq[BookmarkEntry],
           isNewFolder: isNew,
         ))
 
-    return suggestions
+    return BatchResult(suggestions: suggestions, skipped: skipCount, lowConf: lowCount)
   except CatchableError as e:
+    if e.name == "EKeyboardInterrupt":
+      raise
     if cfg.verbose:
       errorMsg &"Batch {batchIndex + 1} failed: {e.msg}"
-    return @[]
+    return BatchResult(suggestions: @[], skipped: 0, lowConf: 0)
 
 proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
                              taxonomy: Taxonomy,
@@ -365,13 +379,18 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
 
   let batches = uncategorized.chunk(cfg.batchSize)
   let conc = cfg.concurrency
+  let totalBookmarks = uncategorized.len
 
   if batches.len == 0:
     return (0, @[])
 
   var completedCount = 0
   var appliedCount = 0
+  var totalSkipped = 0
+  var totalLowConf = 0
+  var totalFailed = 0
   var allSuggestions: seq[Suggestion] = @[]
+  var completedBookmarks = 0
 
   proc commitBatch(suggestions: seq[Suggestion]) =
     for s in suggestions:
@@ -380,54 +399,108 @@ proc runClassificationPhase*(cfg: Config, uncategorized: seq[BookmarkEntry],
         inc appliedCount
 
   if conc <= 1:
+    let startTime = epochTime()
     for i, batch in batches:
-      showProgressBar(i + 1, batches.len, "Classifying bookmarks")
-      let suggestions = classifyBatchAsync(cfg, batch, fullTaxonomy, tfidfMap, i).waitFor()
-      allSuggestions.add(suggestions)
+      let elapsed = int(epochTime() - startTime)
+      let prefix = &"Classifying {completedBookmarks}/{totalBookmarks} bookmarks"
+      showProgressBar(i + 1, batches.len, prefix, elapsed)
+      let br = classifyBatchAsync(cfg, batch, fullTaxonomy, tfidfMap, i).waitFor()
+      allSuggestions.add(br.suggestions)
+      completedBookmarks += batch.len
+      totalSkipped += br.skipped
+      totalLowConf += br.lowConf
       if autoApply:
-        commitBatch(suggestions)
+        commitBatch(br.suggestions)
+      dimMsg &"Batch {i + 1}/{batches.len}: {br.suggestions.len} classified, {br.skipped} skipped, {br.lowConf} low-confidence"
+    echo ""
+    dimMsg &"Phase 2 complete: {allSuggestions.len} classified, {totalSkipped} skipped, {totalLowConf} low-confidence, {totalFailed} failed"
     echo ""
     return (appliedCount, allSuggestions)
 
-  var pending: seq[Future[seq[Suggestion]]] = @[]
+  var pending: seq[Future[BatchResult]] = @[]
   var batchIdx = 0
+  let startTime = epochTime()
+  var lastHeartbeat = 0.0
 
-  proc drainPending(): int =
-    var drained = 0
+  proc hasUnfinished(): bool =
+    for f in pending:
+      if not f.finished: return true
+    return false
+
+  proc drainPending() =
     var i = 0
     while i < pending.len:
       if pending[i].finished:
-        let batchResult = pending[i].read()
+        let br = pending[i].read()
         pending.delete(i)
         inc completedCount
-        showProgressBar(completedCount, batches.len, "Classifying bookmarks")
-        allSuggestions.add(batchResult)
+        let bmCount = if completedCount <= batches.len: min(cfg.batchSize, totalBookmarks - completedBookmarks + cfg.batchSize) else: cfg.batchSize
+        completedBookmarks += bmCount
+        allSuggestions.add(br.suggestions)
+        totalSkipped += br.skipped
+        totalLowConf += br.lowConf
         if autoApply:
-          commitBatch(batchResult)
-        inc drained
+          commitBatch(br.suggestions)
+        let elapsed = int(epochTime() - startTime)
+        let prefix = &"Classifying {completedBookmarks}/{totalBookmarks} bookmarks"
+        showProgressBar(completedCount, batches.len, prefix, elapsed)
+        dimMsg &"Batch {completedCount}/{batches.len}: {br.suggestions.len} classified, {br.skipped} skipped, {br.lowConf} low-confidence"
+        inc i
       else:
         inc i
-    return drained
 
   while batchIdx < batches.len or pending.len > 0:
     while pending.len < conc and batchIdx < batches.len:
       pending.add(classifyBatchAsync(cfg, batches[batchIdx], fullTaxonomy, tfidfMap, batchIdx))
       inc batchIdx
 
-    while pending.len > 0:
-      poll()
-      discard drainPending()
-      if pending.len > 0 and not pending[0].finished:
+    if hasUnfinished():
+      try:
         poll()
-      else:
-        break
+      except CatchableError as e:
+        if e.name == "EKeyboardInterrupt":
+          raise
+        sleep(50)
 
+    drainPending()
+
+    if hasUnfinished():
+      let now = epochTime()
+      if now - lastHeartbeat >= 1.0:
+        lastHeartbeat = now
+        let elapsed = int(epochTime() - startTime)
+        let prefix = &"Classifying {completedBookmarks}/{totalBookmarks} bookmarks"
+        showProgressBar(completedCount, batches.len, prefix, elapsed)
+
+  for f in pending:
+    if f.finished:
+      try:
+        let br = f.read()
+        allSuggestions.add(br.suggestions)
+        totalSkipped += br.skipped
+        totalLowConf += br.lowConf
+        if autoApply:
+          commitBatch(br.suggestions)
+      except CatchableError:
+        inc totalFailed
+
+  echo ""
+  dimMsg &"Phase 2 complete: {allSuggestions.len} classified, {totalSkipped} skipped, {totalLowConf} low-confidence, {totalFailed} failed"
   echo ""
   return (appliedCount, allSuggestions)
 
 proc organizeBookmarks*(cfg: Config, autoAcceptAll: bool = false, limit: int = 0): int =
   let db = cfg.initDb()
   defer: db.close()
+
+  defer:
+    if cfg.runtimeManaged and cfg.modelName.len > 0:
+      let bin = findOllamaBin()
+      if bin.len > 0:
+        try:
+          discard execShellCmd(bin & " stop " & cfg.modelName & " 2>/dev/null")
+        except:
+          discard
 
   let uncategorized = getUnorganisedBookmarks(cfg, limit)
   let webUncategorized = uncategorized.filterIt(it.url.startsWith("http://") or it.url.startsWith("https://"))

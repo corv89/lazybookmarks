@@ -40,7 +40,15 @@ proc cmdOrganise(model = "", autoAcceptHigh = false, autoAcceptAll = false,
   let registry = loadModelRegistry()
 
   ensureReady(cfg, registry)
-  discard cfg.organizeBookmarks(autoAcceptAll = autoAcceptAll, limit = limit)
+  try:
+    discard cfg.organizeBookmarks(autoAcceptAll = autoAcceptAll, limit = limit)
+  except CatchableError as e:
+    if e.name == "EKeyboardInterrupt":
+      if cfg.runtimeManaged and cfg.modelName.len > 0:
+        let bin = findOllamaBin()
+        if bin.len > 0:
+          discard execShellCmd(bin & " stop " & cfg.modelName & " 2>/dev/null")
+    raise
 
 proc cmdList(category = "", unorganised = false) =
   let cfg = loadConfig()

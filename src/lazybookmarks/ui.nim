@@ -17,7 +17,14 @@ proc dimMsg*(msg: string) =
 proc headerMsg*(msg: string) =
   stdout.styledWriteLine(styleBright, fgCyan, "\n  " & msg, resetStyle, "\n")
 
-proc showProgressBar*(current: int, total: int, prefix: string = "") =
+proc formatElapsed*(seconds: int): string =
+  if seconds < 60:
+    return &"{seconds}s"
+  let m = seconds div 60
+  let s = seconds mod 60
+  return &"{m}m{s:02d}s"
+
+proc showProgressBar*(current: int, total: int, prefix: string = "", elapsed: int = -1) =
   stdout.write "\r\e[2K"
   if total == 0:
     stdout.write prefix & " 0/0"
@@ -27,7 +34,10 @@ proc showProgressBar*(current: int, total: int, prefix: string = "") =
   let width = 30
   let filled = (current * width) div total
   let bar = repeat("#", filled) & repeat("-", width - filled)
-  stdout.write prefix & " [" & bar & "] " & $pct & "% (" & $current & "/" & $total & ")"
+  var suffix = " (" & $current & "/" & $total & ")"
+  if elapsed >= 0:
+    suffix.add("  " & formatElapsed(elapsed))
+  stdout.write prefix & " [" & bar & "] " & $pct & "%" & suffix
   stdout.flushFile()
 
 type ReviewAction* = enum

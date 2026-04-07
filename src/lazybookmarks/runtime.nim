@@ -27,7 +27,7 @@ proc requireRuntime*(cfg: Config) =
   stdout.styledWriteLine(styleBright, fgRed, "  ✗ ", fgDefault, resetStyle,
     "Ollama is not running.")
   when defined(macosx):
-    stdout.styledWriteLine(styleDim, "    Start it with:  open -a Ollama", resetStyle)
+    stdout.styledWriteLine(styleDim, "    Start it with:  ollama serve &", resetStyle)
     stdout.styledWriteLine(styleDim, "    Or install:     brew install ollama", resetStyle)
   elif defined(linux):
     stdout.styledWriteLine(styleDim, "    Start it with:  ollama serve &", resetStyle)
